@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sacramento&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
   --surface-0:#FDF6E9;
@@ -47,6 +48,40 @@
 <body>
 <div style="position:relative;min-height:100vh;padding:24px 12px;box-sizing:border-box;display:flex;justify-content:center;background:#2A2A2A;"><div style="position:absolute;inset:0;background:rgba(15,15,20,0.35);"></div><div id="app" style="position:relative;width:100%;max-width:480px;background:var(--surface-0);border-radius:22px;box-shadow:0 12px 40px rgba(0,0,0,0.45);overflow:hidden;font-family:var(--font-sans, sans-serif);"></div></div>
 <script>
+// ===== Connexion à la base de données Supabase (remplace le stockage Claude) =====
+const SUPABASE_URL = 'https://sncwehwxrbntcyklkshh.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_OW_O-vzSCHm_mM1Zu-ffvw_sjAs8zNv';
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+window.storage = {
+  get: async function(key, shared){
+    const { data, error } = await supabaseClient
+      .from('app_storage')
+      .select('value')
+      .eq('key', key)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('not found');
+    return { key: key, value: data.value, shared: shared };
+  },
+  set: async function(key, value, shared){
+    const { error } = await supabaseClient
+      .from('app_storage')
+      .upsert({ key: key, value: value }, { onConflict: 'key' });
+    if (error) throw error;
+    return { key: key, value: value, shared: shared };
+  },
+  delete: async function(key, shared){
+    const { error } = await supabaseClient
+      .from('app_storage')
+      .delete()
+      .eq('key', key);
+    if (error) throw error;
+    return { key: key, deleted: true, shared: shared };
+  }
+};
+// ===== Fin de l'adaptateur Supabase =====
+
 (function(){
   const DEFAULT_STRUCTURE = {
     categories: [
