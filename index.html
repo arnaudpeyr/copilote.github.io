@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sacramento&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
   --surface-0:#FDF6E9;
@@ -48,40 +47,6 @@
 <body>
 <div style="position:relative;min-height:100vh;padding:24px 12px;box-sizing:border-box;display:flex;justify-content:center;background:#2A2A2A;"><div style="position:absolute;inset:0;background:rgba(15,15,20,0.35);"></div><div id="app" style="position:relative;width:100%;max-width:480px;background:var(--surface-0);border-radius:22px;box-shadow:0 12px 40px rgba(0,0,0,0.45);overflow:hidden;font-family:var(--font-sans, sans-serif);"></div></div>
 <script>
-// ===== Connexion à la base de données Supabase (remplace le stockage Claude) =====
-const SUPABASE_URL = 'https://sncwehwxrbntcyklkshh.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_OW_O-vzSCHm_mM1Zu-ffvw_sjAs8zNv';
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-window.storage = {
-  get: async function(key, shared){
-    const { data, error } = await supabaseClient
-      .from('app_storage')
-      .select('value')
-      .eq('key', key)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) throw new Error('not found');
-    return { key: key, value: data.value, shared: shared };
-  },
-  set: async function(key, value, shared){
-    const { error } = await supabaseClient
-      .from('app_storage')
-      .upsert({ key: key, value: value }, { onConflict: 'key' });
-    if (error) throw error;
-    return { key: key, value: value, shared: shared };
-  },
-  delete: async function(key, shared){
-    const { error } = await supabaseClient
-      .from('app_storage')
-      .delete()
-      .eq('key', key);
-    if (error) throw error;
-    return { key: key, deleted: true, shared: shared };
-  }
-};
-// ===== Fin de l'adaptateur Supabase =====
-
 (function(){
   const DEFAULT_STRUCTURE = {
     categories: [
@@ -297,8 +262,446 @@ window.storage = {
               {id:'nhb-17', label:'Nettoyer le frigo premix + JDF', obligatoire:true}
           ]},
           { id:'requi', name:'Réqui', icon:'archive', type:'submenu', sublieux:[
-              { id:'requi-rdc', name:'Réqui RDC', icon:'archive', type:'requisition', products:['Coca','Coca Zéro'] },
-              { id:'requi-roof', name:'Réqui Roof', icon:'archive', type:'requisition', products:['Coca','Coca Zéro'] }
+              { id:'requi-rdc', name:'Réqui RDC', icon:'archive', type:'requisition', products:[
+              {location:'Frigo bar extérieur', name:'BADOIT 100CL', unit:'BOUT', parstock:24},
+              {location:'Frigo bar extérieur', name:'EVIAN 100CL', unit:'BOUT', parstock:24},
+              {location:'EAU', name:'BADOIT 100CL', unit:'BOUT', parstock:12},
+              {location:'EAU', name:'BADOIT 50CL', unit:'BOUT', parstock:15},
+              {location:'EAU', name:'EVIAN 100CL', unit:'BOUT', parstock:8},
+              {location:'EAU', name:'EVIAN 50CL', unit:'BOUT', parstock:15},
+              {location:'FRI 1', name:'VITAMONT FRAMBOISE', unit:'BOUT', parstock:14},
+              {location:'FRI 1', name:'VITAMONT ANANAS', unit:'BOUT', parstock:7},
+              {location:'FRI 1', name:'VITAMONT TOMATE', unit:'BOUT', parstock:7},
+              {location:'FRI 1', name:'VITAMONT POMME REINETTE', unit:'BOUT', parstock:14},
+              {location:'FRI 1', name:'VITAMONT PECHE DE VIGNE', unit:'BOUT', parstock:7},
+              {location:'FRI 1', name:'COCA-COLA ZERO VC33', unit:'BOUT', parstock:18},
+              {location:'FRI 1', name:'COCA-COLA VC 33', unit:'BOUT', parstock:18},
+              {location:'FRI 1', name:'EVIAN 25CL', unit:'BOUT', parstock:6},
+              {location:'FRI 1', name:'LIMONADE 25VL VC', unit:'BOUT', parstock:7},
+              {location:'FRI 1', name:'FUZETEA', unit:'BOUT', parstock:7},
+              {location:'FRI 1', name:'ORANGINA', unit:'BOUT', parstock:5},
+              {location:'FRI 1', name:'FEVER TREE TONIC WATER', unit:'BOUT', parstock:24},
+              {location:'FRI 1', name:'FEVER TREE GINGER BEER', unit:'BOUT', parstock:16},
+              {location:'FRI 1', name:'REDBULL', unit:'CAN', parstock:16},
+              {location:'FRI 1', name:'MURETAINE BLANCHE', unit:'BOUT', parstock:24},
+              {location:'FRI 1', name:'MURETAINE BLONDE', unit:'BOUT', parstock:24},
+              {location:'FRI 1', name:'MURETAINE AMBRE', unit:'BOUT', parstock:12},
+              {location:'FRI 2', name:'COCA-COLA ZERO VC33', unit:'BOUT', parstock:18},
+              {location:'FRI 2', name:'COCA-COLA VC 33', unit:'BOUT', parstock:18},
+              {location:'FRI 2', name:'EVIAN 25CL', unit:'BOUT', parstock:6},
+              {location:'FRI 2', name:'LIMONADE 25VL VC', unit:'BOUT', parstock:7},
+              {location:'FRI 2', name:'FUZETEA', unit:'BOUT', parstock:7},
+              {location:'FRI 2', name:'ORANGINA', unit:'BOUT', parstock:5},
+              {location:'FRI 2', name:'FEVER TREE TONIC WATER', unit:'BOUT', parstock:24},
+              {location:'FRI 2', name:'FEVER TREE GINGER BEER', unit:'BOUT', parstock:16},
+              {location:'FRI 2', name:'REDBULL ZERO', unit:'CAN', parstock:16},
+              {location:'FRI 3', name:'COCA-COLA ZERO VC33', unit:'BOUT', parstock:18},
+              {location:'FRI 3', name:'COCA-COLA VC 33', unit:'BOUT', parstock:18},
+              {location:'FRI 3', name:'EVIAN 25CL', unit:'BOUT', parstock:6},
+              {location:'FRI 3', name:'LIMONADE 25VL VC', unit:'BOUT', parstock:7},
+              {location:'FRI 3', name:'FUZETEA', unit:'BOUT', parstock:7},
+              {location:'FRI 3', name:'ORANGINA', unit:'BOUT', parstock:5},
+              {location:'FRI 3', name:'FEVER TREE TONIC WATER', unit:'BOUT', parstock:24},
+              {location:'FRI 3', name:'FEVER TREE GINGER BEER', unit:'BOUT', parstock:16},
+              {location:'FRI 3', name:'REDBULL PASTEQUE', unit:'CAN', parstock:16},
+              {location:'FRI 3', name:'1664 0%', unit:'BOUT', parstock:12},
+              {location:'FRI 3', name:'VDB IPA', unit:'BOUT', parstock:24},
+              {location:'PREP', name:'BADOIT PET', unit:'BOUT', parstock:8},
+              {location:'PREP', name:'GRANINI ANANAS', unit:'BOUT', parstock:4},
+              {location:'PREP', name:'GRANINI CRAMBERRY', unit:'BOUT', parstock:4},
+              {location:'PREP', name:'GRANINI POMME', unit:'BOUT', parstock:4},
+              {location:'PREP', name:'GRANINI ABRICOT', unit:'BOUT', parstock:2},
+              {location:'PREP', name:'GRANINI TOMATE', unit:'BOUT', parstock:2},
+              {location:'PREP', name:'JUS DE POIRE VITAMONT', unit:'BOUT', parstock:2},
+              {location:'PREP', name:'JUS DE CAROTTE VITAMONT', unit:'BOUT', parstock:2},
+              {location:'PREP', name:'COCA PET', unit:'BOUT', parstock:2},
+              {location:'PREP', name:'LIMONADE PET', unit:'BOUT', parstock:2},
+              {location:'PREP', name:'LA FRENCH TONIC PET', unit:'BOUT', parstock:8},
+              {location:'PREP', name:'LA FRENCH GINGER BEER PET', unit:'BOUT', parstock:4},
+              {location:'SIROPS', name:'SIROP FRAMBOISE', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP FRAISE', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP GRENADINE', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP PECHE', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP CITRON', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP MENTHE', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP MANGUE', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP DE PASSION', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP ORGEAT', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP VIOLETTE', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP POMME VERTE', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP FLEUR DE SUREAU', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP VANILLE', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP CARAMEL', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP SUCRE DE CANNE', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP DE LAVANDE', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP D\'AGAVE', unit:'BOUT', parstock:null},
+              {location:'SIROPS', name:'SIROP COLA', unit:'BOUT', parstock:null},
+              {location:'BU', name:'APEROL SPEEDRACK', unit:'70 CL', parstock:2},
+              {location:'BU', name:'CAMPARI', unit:'100CL', parstock:1},
+              {location:'BU', name:'LILLET BLANC', unit:'75CL', parstock:2},
+              {location:'BU', name:'COINTREAU', unit:'70CL', parstock:1},
+              {location:'BU', name:'ST GERMAIN SPEEDRACK', unit:'70CL', parstock:2},
+              {location:'BU', name:'PECHE DU VERGER M.B (x2 réfs)', unit:'70CL', parstock:1},
+              {location:'BU', name:'GET 27', unit:'100CL', parstock:2},
+              {location:'BU', name:'BAILEY\'S', unit:'70 CL', parstock:1},
+              {location:'BU', name:'LIMONCELLO', unit:'70CL', parstock:1},
+              {location:'BU', name:'MALFY SPEEDRACK', unit:'70CL', parstock:1},
+              {location:'BU', name:'BEEFEATER', unit:'70CL', parstock:2},
+              {location:'BU', name:'BOMBAY SAPPHIRE', unit:'70CL', parstock:1},
+              {location:'BU', name:'HENDRICKS', unit:'70CL', parstock:1},
+              {location:'BU', name:'HAVANA CLUB 3 ANS SPEEDRACK', unit:'100 CL', parstock:2},
+              {location:'BU', name:'BACARDI SPICED', unit:'70CL', parstock:2},
+              {location:'BU', name:'EL JIMADOR (x2 ref ilot central)', unit:'70CL', parstock:2},
+              {location:'BU', name:'ABSOLUT SPEEDRACK', unit:'100CL', parstock:2},
+              {location:'APERITIFS', name:'MIGNONETTES LILLET BLANC', unit:'BOITE 12', parstock:null},
+              {location:'APERITIFS', name:'RICARD', unit:'100CL', parstock:null},
+              {location:'APERITIFS', name:'PASTIS 51', unit:'100CL', parstock:null},
+              {location:'APERITIFS', name:'PORTO ROUGE', unit:'75 CL', parstock:null},
+              {location:'APERITIFS', name:'PORTO BLANC', unit:'75 CL', parstock:null},
+              {location:'APERITIFS', name:'QUINTINYE BLANCHE', unit:'75 CL', parstock:null},
+              {location:'APERITIFS', name:'QUINTINYE ROUGE', unit:'75 CL', parstock:null},
+              {location:'APERITIFS', name:'SUZE', unit:'100CL', parstock:null},
+              {location:'APERITIFS', name:'ABSINTHE PERNOD', unit:'70CL', parstock:null},
+              {location:'APERITIFS', name:'NOILLY PRAT DRY', unit:'75 CL', parstock:null},
+              {location:'EAUX DE VIE', name:'ARMAGNAC', unit:'70CL', parstock:null},
+              {location:'EAUX DE VIE', name:'COGNAC VS MARTEL', unit:'70CL', parstock:null},
+              {location:'EAUX DE VIE', name:'COGNAC VSOP MARTEL', unit:'70CL', parstock:null},
+              {location:'EAUX DE VIE', name:'EDV FRAMBOISE', unit:'70CL', parstock:null},
+              {location:'EAUX DE VIE', name:'EDV POIRE WILLIAMS', unit:'70CL', parstock:null},
+              {location:'EAUX DE VIE', name:'EDV VIEILLE PRUNE', unit:'70CL', parstock:null},
+              {location:'EAUX DE VIE', name:'CALVADOS CHRISTIAN DROUIN', unit:'70CL', parstock:null},
+              {location:'EAUX DE VIE', name:'COGNAC BOUTELLEAU', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'CREME DE FRAMBOISE', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'MANDARINE', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'MARASQUIN', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'VIOLETTE', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'PIMENT D\'ESPELETTE', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'CACAO BLANC', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'KALHUA', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'AMARETTO', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'ITALICUS', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'CREME DE CASSIS', unit:'100CL', parstock:null},
+              {location:'LIQUEURS', name:'CREME DE MURE', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'PAMPLEMOUSSE SS ALCOOL', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'GRAND MARNIER', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'CHARTREUSE', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'BUM BU', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'LIQUEUR DE MANZANA VERDE', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'LIQUEUR DE POIRE WILLIAMS', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'MENTHE PASTILLE', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'LIQUEUR DE MANDARINE (PREMIX)', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'CYNAR (PREMIX)', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'CREME D\'ABRICOT (PREMIX)', unit:'70CL', parstock:null},
+              {location:'LIQUEURS', name:'LIQUEUR DE FLEUR DE SUREAU (PREMIX + VERSE)', unit:'70CL', parstock:null},
+              {location:'GINS', name:'BOMBAY ORIGINAL', unit:'70CL', parstock:null},
+              {location:'GINS', name:'BEEFEATER 24', unit:'70CL', parstock:null},
+              {location:'GINS', name:'G\'VINE FLORAISON', unit:'70CL', parstock:null},
+              {location:'GINS', name:'MONKEY 47', unit:'50CL', parstock:null},
+              {location:'GINS', name:'HEXAGONE', unit:'70CL', parstock:null},
+              {location:'GINS', name:'JUNE POIRE', unit:'70CL', parstock:null},
+              {location:'GINS', name:'JUNE PECHE', unit:'70CL', parstock:null},
+              {location:'GINS', name:'G\'VINE NOUAISON', unit:'BIB', parstock:null},
+              {location:'GINS', name:'FIVE O\'CLOCK STRAW BALE', unit:'BIB', parstock:null},
+              {location:'GINS', name:'S DE SORGIN ROSE', unit:'70CL', parstock:null},
+              {location:'GINS', name:'YU GIN CLASSIQUE', unit:'70CL', parstock:null},
+              {location:'GINS', name:'LONDON N3', unit:'70CL', parstock:null},
+              {location:'GINS', name:'PORTOFINO', unit:'50CL', parstock:null},
+              {location:'GINS', name:'GUNPOWDER', unit:'70CL', parstock:null},
+              {location:'GINS', name:'ROKU', unit:'70CL', parstock:null},
+              {location:'GINS', name:'SKAAGERAC', unit:'70CL', parstock:null},
+              {location:'GINS', name:'BOTANIST', unit:'70CL', parstock:null},
+              {location:'GINS', name:'NORDES', unit:'70CL', parstock:null},
+              {location:'GINS', name:'BRECON', unit:'70CL', parstock:null},
+              {location:'GINS', name:'UNGAVA', unit:'70CL', parstock:null},
+              {location:'GINS', name:'YU NO', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'HAVANA SPICED SPEEDRACK', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'HECHICERA', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'CACHACA (x2 ref ilot centrale)', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'NEISSON BLANC (x2 ref ilot centrale)', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'FAIR XO', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'HAVANA CLUB 7 ANS', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'BOLOGNE VO', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'SANTA TERESA', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'BACARDI BLANCA', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'BACARDI ORO', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'SHAKARA', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'BRUGAL', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'RENEGADE', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'HAMPDEN 8 ANS', unit:'70CL', parstock:null},
+              {location:'RHUMS', name:'PISCO', unit:'70CL', parstock:null},
+              {location:'TEQUILAS', name:'MEZCAL LA HERENCIA', unit:'70CL', parstock:null},
+              {location:'VODKAS', name:'LE PHILTRE', unit:'70CL', parstock:null},
+              {location:'VODKAS', name:'ABSOLUT ELYX', unit:'70CL', parstock:null},
+              {location:'VODKAS', name:'RENAISSANCE', unit:'BIB', parstock:null},
+              {location:'VODKAS', name:'42 BELOW (PREMIX)', unit:'70CL', parstock:null},
+              {location:'WHISKYS', name:'GWALARN', unit:'70CL', parstock:null},
+              {location:'WHISKYS', name:'JAMESON (x2 ref ilot centrale)', unit:'100CL', parstock:null},
+              {location:'WHISKYS', name:'OLD BARDSTOWN', unit:'70CL', parstock:null},
+              {location:'WHISKYS', name:'MONKEY SHOULDER', unit:'70CL', parstock:null},
+              {location:'WHISKYS', name:'MONKEY SHOULDER SMOKEY', unit:'70CL', parstock:null},
+              {location:'WHISKYS', name:'ABERLOUR', unit:'70CL', parstock:null},
+              {location:'WHISKYS', name:'AKASHI', unit:'50 CL', parstock:null},
+              {location:'WHISKYS', name:'CHIVAS 15ANS', unit:'70CL', parstock:null},
+              {location:'WHISKYS', name:'WOODFORD RESERVE', unit:'70CL', parstock:null},
+              {location:'WHISKYS', name:'WOODFORD BOURBON', unit:'70CL', parstock:null},
+              {location:'WHISKYS', name:'NIKKA DAYS', unit:'70CL', parstock:null},
+              {location:'WHISKYS', name:'FETTERCAIRN 12 ANS', unit:'70CL', parstock:null},
+              {location:'WHISKYS', name:'PORT ASKAIG', unit:'70CL', parstock:null},
+              {location:'WHISKYS', name:'HIBIKI', unit:'70CL', parstock:null},
+              {location:'WHISKYS', name:'MACALAN', unit:'70CL', parstock:null},
+              {location:'Bar', name:'PROSECCO BAR', unit:'75CL', parstock:12},
+              {location:'Bar', name:'MUMM GRAND CORDON BAR', unit:'75CL', parstock:4},
+              {location:'Bar', name:'CHAMP. DELAMOTTE', unit:'75CL', parstock:4},
+              {location:'Bar', name:'PERRIER-JOUET BDB CAVE', unit:'75CL', parstock:3},
+              {location:'Bar', name:'PERRIER-JOUET ROSE CAVE', unit:'75CL', parstock:3},
+              {location:'Bar', name:'PERRIER-JOUET BRUT CAVE', unit:'75CL', parstock:3},
+              {location:'Bar', name:'RUINART BLANC DE BLANC CAVE', unit:'75CL', parstock:2},
+              {location:'Bar', name:'PERRIER-JOUET BRUT MAGNUM CAVE', unit:'150CL', parstock:1},
+              {location:'Bar', name:'MUMM MAGNUM CAVE', unit:'150CL', parstock:2},
+              {location:'Bar', name:'RUINART BLANC DE BLANC CAVE', unit:'150CL', parstock:2},
+              {location:'Bar', name:'CHASSENAY D\'ARCE GROUPE + VERSE', unit:'75CL', parstock:3},
+              {location:'Bar', name:'AVOGLIA ITALIE BAR', unit:'75CL', parstock:8},
+              {location:'Bar', name:'LA LA LA - DOMAINE DE NIZAS BAR', unit:'75CL', parstock:4},
+              {location:'Bar', name:'TEMPETE SOUS LA COUETTE BAR', unit:'75CL', parstock:10},
+              {location:'Bar', name:'CHATEAU FRANC BAUDRON ST EMILION BAR', unit:'75CL', parstock:10},
+              {location:'Bar', name:'PETIT PAS - MAS JANEIL', unit:'75CL', parstock:9},
+              {location:'Bar', name:'LE CLOS ROUGE - DOMAINE DE NIZAS', unit:'75CL', parstock:9},
+              {location:'Bar', name:'LE BOURDON - CDR', unit:'75CL', parstock:5},
+              {location:'Bar', name:'LE BEAU VIN - FRONTON', unit:'75CL', parstock:5},
+              {location:'Bar', name:'SI LE VIN - ST NICOLAS DE BOURGUEIL', unit:'75CL', parstock:4},
+              {location:'Bar', name:'VEZZO - PINO NERRO', unit:'75CL', parstock:8},
+              {location:'Bar', name:'LES BECASSINES LA CLAPE BAR', unit:'75CL', parstock:5},
+              {location:'FRIGO VIN', name:'DOMAINE CASTELNAU CHARDONNAY BAR', unit:'75CL', parstock:12},
+              {location:'FRIGO VIN', name:'MELODY (MOELLEUX) BAR', unit:'75CL', parstock:8},
+              {location:'FRIGO VIN', name:'TEMPETE SOUS LA COUETTE BAR', unit:'75CL', parstock:8},
+              {location:'FRIGO VIN', name:'VIOGNIER CANET', unit:'75CL', parstock:5},
+              {location:'FRIGO VIN', name:'PETIT CHABLIS LA CHABLISIENNE BAR', unit:'75CL', parstock:3},
+              {location:'FRIGO VIN', name:'PINOT GRIGIO', unit:'75CL', parstock:8},
+              {location:'FRIGO VIN', name:'PETIT PAS MAS JANEIL', unit:'75CL', parstock:8},
+              {location:'FRIGO VIN', name:'LES CANAILLES', unit:'75CL', parstock:8},
+              {location:'FRIGO VIN', name:'NIMOIS NI TOI', unit:'75CL', parstock:3},
+              {location:'FRIGO VIN', name:'OSCAR DOURBIE', unit:'75CL', parstock:3},
+              {location:'FRIGO VIN', name:'CASTEL VIOGNIER GROUPE', unit:'75CL', parstock:8},
+              {location:'FRIGO VIN', name:'SYMPHONIE BAR', unit:'75CL', parstock:4},
+              {location:'FRIGO VIN', name:'DOMAINE DE LA FORET', unit:'75CL', parstock:8},
+              {location:'FRIGO VIN', name:'WINE O\'CLOCK', unit:'75CL', parstock:4},
+              {location:'FRIGO VIN', name:'ROSEBLOOD', unit:'75CL', parstock:4},
+              {location:'FRIGO VIN', name:'CASTEL PINOT NOIR ROSE GROUPE', unit:'75CL', parstock:8},
+              {location:'ROSES', name:'ANGOSTURA', unit:'BOUT', parstock:null},
+              {location:'ROSES', name:'BITTER REAGANS', unit:'BOUT', parstock:null},
+              {location:'PETIT MATERIEL', name:'GRANDES PAILLES NOIRES', unit:'PAQUET', parstock:null},
+              {location:'PETIT MATERIEL', name:'PETITES PAILLES NOIRES', unit:'PAQUET', parstock:null},
+              {location:'PETIT MATERIEL', name:'SERVIETTES NOIRES', unit:'PAQUET', parstock:null},
+              {location:'PETIT MATERIEL', name:'PIQUE EN BOIS', unit:'PAQUET', parstock:null},
+              {location:'PETIT MATERIEL', name:'ROULEAU IMPRIMANTE', unit:'PIECE', parstock:null},
+              {location:'PETIT MATERIEL', name:'ROULEAUX TPE', unit:'PIECE', parstock:null},
+              {location:'PETIT MATERIEL', name:'AGRAFE', unit:'BOITE', parstock:null},
+              {location:'PETIT MATERIEL', name:'SAVON MAIN', unit:'PIECE', parstock:null},
+              {location:'PETIT MATERIEL', name:'CARTOUCHES NO2', unit:'BOITE', parstock:null},
+              {location:'PETIT MATERIEL', name:'SOPALIN', unit:'ROULEAU', parstock:null},
+              {location:'EPICERIE', name:'TABASCO', unit:'BOUT', parstock:null},
+              {location:'EPICERIE', name:'SEL CELERI', unit:'BOUT', parstock:null},
+              {location:'EPICERIE', name:'SAUCE WORCESTERSHIRE', unit:'BOUT', parstock:null},
+              {location:'EPICERIE', name:'FLEURS D\'HIBISCUS', unit:'SACHET', parstock:null},
+              {location:'EPICERIE', name:'POIVRE SECHUAN', unit:'BOITE', parstock:null},
+              {location:'EPICERIE', name:'ACIDE CITRIQUE', unit:'BOITE', parstock:null},
+              {location:'EPICERIE', name:'MENTHE POIVREE', unit:'BOITE', parstock:null},
+              {location:'EPICERIE', name:'LAIT DE COCO', unit:'BOITE', parstock:null},
+              {location:'EPICERIE', name:'BAIES DE GENIEVRE', unit:'SACHET', parstock:null},
+              {location:'EPICERIE', name:'ROOIBOS', unit:'SACHET', parstock:null}
+            ] },
+              { id:'requi-roof', name:'Réqui Roof', icon:'archive', type:'requisition', products:[
+              {location:'FRI 2', name:'BADOIT 100CL', unit:'BOUT', parstock:8},
+              {location:'RESERVE', name:'BADOIT 100CL', unit:'BOUT', parstock:12},
+              {location:'FRI 2', name:'BADOIT 50CL', unit:'BOUT', parstock:5},
+              {location:'RESERVE', name:'BADOIT 50CL', unit:'BOUT', parstock:6},
+              {location:'FRI 2', name:'EVIAN 100CL', unit:'BOUT', parstock:8},
+              {location:'RESERVE', name:'EVIAN 100CL', unit:'BOUT', parstock:12},
+              {location:'FRI 2', name:'EVIAN 50CL', unit:'BOUT', parstock:5},
+              {location:'RESERVE', name:'EVIAN 50CL', unit:'BOUT', parstock:6},
+              {location:'FRI 1', name:'VITAMONT FRAMBOISE', unit:'BOUT', parstock:6},
+              {location:'RESERVE', name:'VITAMONT FRAMBOISE', unit:'BOUT', parstock:6},
+              {location:'FRI 1', name:'VITAMONT ANANAS', unit:'BOUT', parstock:6},
+              {location:'RESERVE', name:'VITAMONT ANANAS', unit:'BOUT', parstock:6},
+              {location:'FRI 1', name:'VITAMONT TOMATE', unit:'BOUT', parstock:6},
+              {location:'RESERVE', name:'VITAMONT TOMATE', unit:'BOUT', parstock:6},
+              {location:'FRI 1', name:'VITAMONT POMME REINETTE', unit:'BOUT', parstock:6},
+              {location:'RESERVE', name:'VITAMONT POMME REINETTE', unit:'BOUT', parstock:6},
+              {location:'FRI 1', name:'VITAMONT PECHE DE VIGNE', unit:'BOUT', parstock:6},
+              {location:'RESERVE', name:'VITAMONT PECHE DE VIGNE', unit:'BOUT', parstock:6},
+              {location:'FRI 1', name:'COCA-COLA ZERO VC33', unit:'BOUT', parstock:15},
+              {location:'FRI 2', name:'COCA-COLA ZERO VC33', unit:'BOUT', parstock:15},
+              {location:'RESERVE', name:'COCA-COLA ZERO VC33', unit:'BOUT', parstock:24},
+              {location:'FRI 1', name:'COCA-COLA VC 33', unit:'BOUT', parstock:15},
+              {location:'FRI 2', name:'COCA-COLA VC 33', unit:'BOUT', parstock:15},
+              {location:'RESERVE', name:'COCA-COLA VC 33', unit:'BOUT', parstock:24},
+              {location:'FRI 1', name:'BADOIT 33CL', unit:'BOUT', parstock:10},
+              {location:'FRI 2', name:'BADOIT 33CL', unit:'BOUT', parstock:15},
+              {location:'RESERVE', name:'BADOIT 33CL', unit:'BOUT', parstock:null},
+              {location:'FRI 1', name:'FUZETEA', unit:'BOUT', parstock:6},
+              {location:'FRI 2', name:'FUZETEA', unit:'BOUT', parstock:6},
+              {location:'RESERVE', name:'FUZETEA', unit:'BOUT', parstock:24},
+              {location:'FRI 1', name:'LIMONADE 25VL VC', unit:'BOUT', parstock:12},
+              {location:'FRI 2', name:'LIMONADE 25VL VC', unit:'BOUT', parstock:12},
+              {location:'RESERVE', name:'LIMONADE 25VL VC', unit:'BOUT', parstock:24},
+              {location:'FRI 1', name:'FEVER TREE TONIC WATER', unit:'BOUT', parstock:21},
+              {location:'FRI 2', name:'FEVER TREE TONIC WATER', unit:'BOUT', parstock:21},
+              {location:'RESERVE', name:'FEVER TREE TONIC WATER', unit:'BOUT', parstock:null},
+              {location:'FRI 1', name:'FEVER TREE GINGER BEER', unit:'BOUT', parstock:21},
+              {location:'FRI 2', name:'FEVER TREE GINGER BEER', unit:'BOUT', parstock:21},
+              {location:'RESERVE', name:'FEVER TREE GINGER BEER', unit:'BOUT', parstock:null},
+              {location:'FRI 1', name:'LONDON ESSENCE ROSEMARY', unit:'BOUT', parstock:12},
+              {location:'FRI 2', name:'LONDON ESSENCE ROSEMARY', unit:'BOUT', parstock:12},
+              {location:'RESERVE', name:'LONDON ESSENCE ROSEMARY', unit:'BOUT', parstock:null},
+              {location:'FRI 2', name:'EVIAN 25CL', unit:'BOUT', parstock:10},
+              {location:'RESERVE', name:'EVIAN 25CL', unit:'BOUT', parstock:null},
+              {location:'FRI 2', name:'ORANGINA', unit:'BOUT', parstock:8},
+              {location:'RESERVE', name:'ORANGINA', unit:'BOUT', parstock:6},
+              {location:'FRI 2', name:'REDBULL', unit:'CANETTE', parstock:12},
+              {location:'RESERVE', name:'REDBULL', unit:'CANETTE', parstock:6},
+              {location:'FRI 2', name:'REDBULL RED', unit:'CANETTE', parstock:12},
+              {location:'RESERVE', name:'REDBULL RED', unit:'CANETTE', parstock:6},
+              {location:'FRI 2', name:'REDBULL SUGAR FREE', unit:'CANETTE', parstock:6},
+              {location:'RESERVE', name:'REDBULL SUGAR FREE', unit:'CANETTE', parstock:6},
+              {location:'FRI 2', name:'JUS D\'ORANGE PRESSE', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'JUS D\'ORANGE PRESSE', unit:'BOUT', parstock:2},
+              {location:'FRI 2', name:'JUS DE PAMPLEMOUSSE PRESSE', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'JUS DE PAMPLEMOUSSE PRESSE', unit:'BOUT', parstock:1},
+              {location:'FRI 2', name:'KOMBUCHA', unit:'BOUT', parstock:6},
+              {location:'FRI 1', name:'BADOIT PET', unit:'BOUT', parstock:8},
+              {location:'RESERVE', name:'BADOIT PET', unit:'BOUT', parstock:15},
+              {location:'FRI 1', name:'GRANINI ANANAS', unit:'BOUT', parstock:2},
+              {location:'RESERVE', name:'GRANINI ANANAS', unit:'BOUT', parstock:2},
+              {location:'FRI 1', name:'GRANINI CRAMBERRY', unit:'BOUT', parstock:2},
+              {location:'RESERVE', name:'GRANINI CRAMBERRY', unit:'BOUT', parstock:2},
+              {location:'FRI 1', name:'GRANINI POMME', unit:'BOUT', parstock:2},
+              {location:'RESERVE', name:'GRANINI POMME', unit:'BOUT', parstock:2},
+              {location:'FRI 1', name:'GRANINI PASSION', unit:'BOUT', parstock:2},
+              {location:'RESERVE', name:'GRANINI PASSION', unit:'BOUT', parstock:2},
+              {location:'FRI 1', name:'COCA PET', unit:'BOUT', parstock:2},
+              {location:'RESERVE', name:'COCA PET', unit:'BOUT', parstock:4},
+              {location:'FRI 1', name:'LIMO PET', unit:'BOUT', parstock:2},
+              {location:'RESERVE', name:'LIMO PET', unit:'BOUT', parstock:2},
+              {location:'FRI 1', name:'LA FRENCH TONIC PET', unit:'BOUT', parstock:2},
+              {location:'RESERVE', name:'LA FRENCH TONIC PET', unit:'BOUT', parstock:4},
+              {location:'FRI 1', name:'LA FRENCH GINGER BEER PET', unit:'BOUT', parstock:2},
+              {location:'RESERVE', name:'LA FRENCH GINGER BEER PET', unit:'BOUT', parstock:4},
+              {location:'RESERVE', name:'SIROP FRAMBOISE', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'SIROP FRAISE', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'SIROP GRENADINE', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'SIROP PECHE', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'SIROP CITRON', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'SIROP MENTHE', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'SIROP MANGUE', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'SIROP DE PASSION', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'SIROP ORGEAT', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'SIROP VIOLETTE', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'SIROP FLEUR DE SUREAU', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'SIROP POMME VERTE', unit:'BOUT', parstock:2},
+              {location:'RESERVE', name:'SIROP SUCRE DE CANNE', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'SIROP VANILLE', unit:'BOUT', parstock:1},
+              {location:'RESERVE', name:'SIROP COLA', unit:'BOUT', parstock:2},
+              {location:'FRI 2', name:'MURETAINE AMBRE', unit:'BOUT', parstock:12},
+              {location:'RESERVE', name:'MURETAINE AMBRE', unit:'BOUT', parstock:12},
+              {location:'FRI 2', name:'MURETAINE IPA', unit:'BOUT', parstock:10},
+              {location:'RESERVE', name:'MURETAINE IPA', unit:'BOUT', parstock:12},
+              {location:'FRI 2', name:'1664 0%', unit:'BOUT', parstock:10},
+              {location:'RESERVE', name:'1664 0%', unit:'BOUT', parstock:12},
+              {location:'REASSORT', name:'FUT CARLSBERG', unit:'FUT', parstock:1},
+              {location:'REASSORT', name:'FUT 1664', unit:'FUT', parstock:1},
+              {location:'RESERVE', name:'APEROL', unit:'70 CL', parstock:4},
+              {location:'RESERVE', name:'LILLET BLANC', unit:'75CL', parstock:1},
+              {location:'RESERVE', name:'CAMPARI', unit:'100CL', parstock:3},
+              {location:'RESERVE', name:'QUINTINYE BLANCHE', unit:'75 CL', parstock:1},
+              {location:'RESERVE', name:'QUINTINYE ROUGE', unit:'75 CL', parstock:1},
+              {location:'RESERVE', name:'RICARD', unit:'70CL', parstock:1},
+              {location:'APERITIFS', name:'NOILLY PRAT', unit:'70CL', parstock:null},
+              {location:'APERITIFS', name:'SUZE', unit:'70CL', parstock:null},
+              {location:'RESERVE', name:'CRODINO', unit:'BOUT', parstock:6},
+              {location:'RESERVE', name:'COINTREAU', unit:'70CL', parstock:2},
+              {location:'RESERVE', name:'ST GERMAIN', unit:'70CL', parstock:3},
+              {location:'RESERVE', name:'LIQUEUR FLEUR DE SUREAU GIFFARD', unit:'70CL', parstock:3},
+              {location:'RESERVE', name:'CREME DE CASSIS', unit:'100CL', parstock:2},
+              {location:'RESERVE', name:'PECHE DU VERGER M.B', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'KALHUA', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'BAILEY\'S', unit:'70 CL', parstock:1},
+              {location:'RESERVE', name:'GET 27', unit:'100CL', parstock:1},
+              {location:'RESERVE', name:'GET 31', unit:'100CL', parstock:1},
+              {location:'RESERVE', name:'AMARETTO', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'LIMONCELLO', unit:'70CL', parstock:3},
+              {location:'RESERVE', name:'ITALICUS', unit:'70CL', parstock:3},
+              {location:'RESERVE', name:'MENTHE PASTILLE', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'LIQUEUR SARTI', unit:'70cL', parstock:2},
+              {location:'RESERVE', name:'MALFY', unit:'70CL', parstock:2},
+              {location:'GINS', name:'BOMBAY SAPPHIRE', unit:'70CL', parstock:null},
+              {location:'RESERVE', name:'BEEFEATER', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'S DE SORGIN ROSE', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'BACARDI SPICED', unit:'70CL', parstock:2},
+              {location:'RESERVE', name:'HAVANA 3 ANS', unit:'70CL', parstock:2},
+              {location:'RESERVE', name:'CACHACA', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'NEISSON BLANC', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'FAIR XO', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'BACARDI ORO', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'SHAKARA', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'LA HECHICERA', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'RENEGADE', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'EL JIMADOR', unit:'70CL', parstock:2},
+              {location:'TEQUILAS', name:'MEZCAL VIDA', unit:'70CL', parstock:null},
+              {location:'TEQUILAS', name:'TEQUILA ALTOS', unit:'70CL', parstock:null},
+              {location:'RESERVE', name:'ABSOLUT', unit:'100CL', parstock:2},
+              {location:'RESERVE', name:'RENAISSANCE', unit:'70CL', parstock:4},
+              {location:'RESERVE', name:'RENAISSANCE BIB', unit:'BIB', parstock:1},
+              {location:'RESERVE', name:'GWALARN', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'WOODFORD BOURBON', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'ABERLOUR', unit:'70CL', parstock:1},
+              {location:'RESERVE', name:'MONKEY SHOULDER ORIGINAL', unit:'70 CL', parstock:1},
+              {location:'RESERVE', name:'NIKKA DAYS', unit:'70CL', parstock:1},
+              {location:'FRI 1', name:'PROSECCO BAR', unit:'75CL', parstock:15},
+              {location:'RESERVE', name:'PROSECCO BAR', unit:'75CL', parstock:24},
+              {location:'FRI 2', name:'MUMM GRAND CORDON BAR', unit:'75CL', parstock:3},
+              {location:'RESERVE', name:'MUMM GRAND CORDON BAR', unit:'75CL', parstock:4},
+              {location:'FRI 2', name:'PERRIER-JOUET BDB CAVE', unit:'75CL', parstock:3},
+              {location:'RESERVE', name:'PERRIER-JOUET BDB CAVE', unit:'75CL', parstock:3},
+              {location:'FRI 2', name:'PERRIER-JOUET ROSE CAVE', unit:'75CL', parstock:3},
+              {location:'FRI 2', name:'PERRIER-JOUET BRUT CAVE', unit:'75CL', parstock:3},
+              {location:'RESERVE', name:'PERRIER-JOUET BRUT CAVE', unit:'75CL', parstock:3},
+              {location:'FRI 2', name:'MUMM GRAND CORDON MAGNUM', unit:'150CL', parstock:3},
+              {location:'FRI 2', name:'CHASSENAY D\'ARCE GROUPE', unit:'75CL', parstock:3},
+              {location:'TIROIR BAR', name:'PALOOZA', unit:'75CL', parstock:6},
+              {location:'RESERVE', name:'PALOOZA', unit:'75CL', parstock:12},
+              {location:'TIROIR BAR', name:'AVOGLIA', unit:'75CL', parstock:4},
+              {location:'RESERVE', name:'AVOGLIA', unit:'75CL', parstock:6},
+              {location:'TIROIR BAR', name:'LE CLOS DE NIZAS', unit:'75CL', parstock:6},
+              {location:'RESERVE', name:'LE CLOS DE NIZAS', unit:'75CL', parstock:6},
+              {location:'ROUGES', name:'CASTEL MERLOT GROUPE', unit:'75CL', parstock:null},
+              {location:'FRI 1', name:'LE COQUILLIER', unit:'75CL', parstock:8},
+              {location:'RESERVE', name:'LE COQUILLIER', unit:'75CL', parstock:4},
+              {location:'FRI 1', name:'MELODY', unit:'75CL', parstock:8},
+              {location:'RESERVE', name:'MELODY', unit:'75CL', parstock:4},
+              {location:'FRI 1', name:'PALOOZA BLC', unit:'75CL', parstock:8},
+              {location:'RESERVE', name:'PALOOZA BLC', unit:'75CL', parstock:4},
+              {location:'FRI 1', name:'ROSEBLOOD', unit:'75CL', parstock:8},
+              {location:'RESERVE', name:'ROSEBLOOD', unit:'75CL', parstock:4},
+              {location:'BLANCS', name:'CASTEL VIOGNIER GROUPE', unit:'75CL', parstock:null},
+              {location:'FRI 1', name:'A L\'OMBRE DE L\'OLIVIER', unit:'75CL', parstock:6},
+              {location:'RESERVE', name:'A L\'OMBRE DE L\'OLIVIER', unit:'75CL', parstock:6},
+              {location:'FRI 1', name:'ROSEBLOOD', unit:'75CL', parstock:5},
+              {location:'RESERVE', name:'ROSEBLOOD', unit:'75CL', parstock:6},
+              {location:'RESERVE', name:'SYMPHONIE', unit:'75CL', parstock:6},
+              {location:'ROSES', name:'LES GRILLONS MAGNUM', unit:'150CL', parstock:null},
+              {location:'ROSES', name:'CASTEL PINOT NOIR ROSE GROUPE', unit:'75CL', parstock:null},
+              {location:'ROSES', name:'ANGOSTURA', unit:'BOUT', parstock:null},
+              {location:'PETIT MATERIEL', name:'GRANDES PAILLES NOIRES', unit:'PAQUET', parstock:null},
+              {location:'PETIT MATERIEL', name:'PETITES PAILLES NOIRES', unit:'PAQUET', parstock:null},
+              {location:'PETIT MATERIEL', name:'ROULEAU IMPRIMANTE', unit:'PIECE', parstock:null},
+              {location:'PETIT MATERIEL', name:'ROULEAUX TPE', unit:'PIECE', parstock:null},
+              {location:'PETIT MATERIEL', name:'AGRAFE', unit:'BOITE', parstock:null},
+              {location:'Bar', name:'TABASCO', unit:'BOUT', parstock:1},
+              {location:'Bar', name:'SEL CELERI', unit:'BOUT', parstock:1},
+              {location:'Bar', name:'SAUCE WORCESTERSHIRE', unit:'BOUT', parstock:1},
+              {location:'EPICERIE', name:'BAIES GENIEVRE', unit:'SACHET', parstock:null},
+              {location:'EPICERIE', name:'MENTHE POIVREE', unit:'SACHET', parstock:null}
+            ] }
           ]}
       ]},
       { id:'arrieres', name:'La Salle', icon:'archive', sublieux: [
@@ -483,6 +886,18 @@ window.storage = {
   }
 
   const LOGO_URI = 'data:image/png;base64,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';
+  (function(){
+    try {
+      let iconLink = document.querySelector('link[rel="icon"]');
+      if (!iconLink){
+        iconLink = document.createElement('link');
+        iconLink.rel = 'icon';
+        document.head.appendChild(iconLink);
+      }
+      iconLink.type = 'image/png';
+      iconLink.href = LOGO_URI;
+    } catch(e){}
+  })();
 
   let state = {
     screen: 'login',
@@ -538,6 +953,14 @@ window.storage = {
     historiqueMonth: null,
     copyFeedback: false,
     perteSaved: false,
+    requisitionFridgeIndex: 0,
+    adminReqCatId: null,
+    adminReqSubId: null,
+    adminReqExpandedFridge: null,
+    adminReqEditingFridge: null,
+    adminReqEditingProductIndex: null,
+    adminReqError: false,
+    requisitionDraft: {},
     perteError: false,
     loading: true,
     globalError: null,
@@ -594,6 +1017,23 @@ window.storage = {
           }
         });
         if (requiChanged){
+          await window.storage.set('structure', JSON.stringify(structure), true);
+        }
+      }
+      // Migration : remplacer les listes de produits placeholder OU l'ancienne structure par catégorie, par le vrai découpage par frigo.
+      if (requi && requi.sublieux){
+        let requiProductsChanged = false;
+        const requiRdc = requi.sublieux.find(s=>s.id==='requi-rdc');
+        const requiRoof = requi.sublieux.find(s=>s.id==='requi-roof');
+        if (requiRdc && (!requiRdc.products.length || typeof requiRdc.products[0] === 'string' || requiRdc.products[0].parstock === undefined || requiRdc.products.some(p=>p.location==='EXT'))){
+          requiRdc.products = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='bar').sublieux.find(s=>s.id==='requi').sublieux.find(s=>s.id==='requi-rdc').products));
+          requiProductsChanged = true;
+        }
+        if (requiRoof && (!requiRoof.products.length || typeof requiRoof.products[0] === 'string' || requiRoof.products[0].parstock === undefined)){
+          requiRoof.products = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='bar').sublieux.find(s=>s.id==='requi').sublieux.find(s=>s.id==='requi-roof').products));
+          requiProductsChanged = true;
+        }
+        if (requiProductsChanged){
           await window.storage.set('structure', JSON.stringify(structure), true);
         }
       }
@@ -719,8 +1159,20 @@ window.storage = {
     }
     return structure;
   }
+  let saveStructureTimer = null;
   async function saveStructure(s){
-    await window.storage.set('structure', JSON.stringify(s), true);
+    if (saveStructureTimer) clearTimeout(saveStructureTimer);
+    saveStructureTimer = setTimeout(async function(){
+      try {
+        await window.storage.set('structure', JSON.stringify(s), true);
+      } catch(e){
+        console.error('Erreur sauvegarde structure (sera retentée au prochain changement):', e);
+      }
+      saveStructureTimer = null;
+    }, 350);
+    // Résout immédiatement : l'affichage utilise déjà l'état en mémoire à jour,
+    // l'écriture réelle est regroupée en arrière-plan pour éviter les rafales de clics.
+    return Promise.resolve();
   }
   async function getProgress(sublieuId){
     try {
@@ -1010,8 +1462,7 @@ window.storage = {
     }
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px;color:var(--text-secondary);gap:5px">'+
       '<span style="flex:1">'+esc(t.label)+'</span>'+
-      '<span onclick="'+(index>0?'appAction(\'moveTaskUp\', {catId:\''+catId+'\', subId:\''+subId+'\', taskId:\''+t.id+'\'})':'')+'" style="cursor:'+(index>0?'pointer':'default')+';color:'+(index>0?'var(--text-secondary)':'var(--border)')+'">'+icon('up',13)+'</span>'+
-      '<span onclick="'+(index<total-1?'appAction(\'moveTaskDown\', {catId:\''+catId+'\', subId:\''+subId+'\', taskId:\''+t.id+'\'})':'')+'" style="cursor:'+(index<total-1?'pointer':'default')+';color:'+(index<total-1?'var(--text-secondary)':'var(--border)')+'">'+icon('down',13)+'</span>'+
+      '<input type="number" min="1" max="'+total+'" value="'+(index+1)+'" onchange="appAction(\'moveTaskToPosition\', {catId:\''+catId+'\', subId:\''+subId+'\', taskId:\''+t.id+'\', position:parseInt(this.value,10)})" style="width:38px;padding:4px;text-align:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:12px">'+
       '<span onclick="appAction(\'startEditTask\',\''+t.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',13)+'</span>'+
       '<span onclick="appAction(\'deleteTask\', {catId:\''+catId+'\', subId:\''+subId+'\', taskId:\''+t.id+'\'})" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',13)+'</span>'+
     '</div>';
@@ -1034,8 +1485,7 @@ window.storage = {
     const deleteAction = listKey === 'fridges' ? 'deleteFridge' : 'deleteRequisitionProduct';
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px;color:var(--text-secondary);gap:5px">'+
       '<span style="flex:1">'+esc(displayText)+(subLabel?' <span style="color:var(--text-muted);font-size:11px">('+esc(subLabel)+')</span>':'')+'</span>'+
-      '<span onclick="'+(index>0?'appAction(\'moveListItemUp\', {catId:\''+catId+'\', subId:\''+subId+'\', nestedId:\''+(nestedId||'')+'\', listKey:\''+listKey+'\', index:'+index+'})':'')+'" style="cursor:'+(index>0?'pointer':'default')+';color:'+(index>0?'var(--text-secondary)':'var(--border)')+'">'+icon('up',13)+'</span>'+
-      '<span onclick="'+(index<total-1?'appAction(\'moveListItemDown\', {catId:\''+catId+'\', subId:\''+subId+'\', nestedId:\''+(nestedId||'')+'\', listKey:\''+listKey+'\', index:'+index+'})':'')+'" style="cursor:'+(index<total-1?'pointer':'default')+';color:'+(index<total-1?'var(--text-secondary)':'var(--border)')+'">'+icon('down',13)+'</span>'+
+      '<input type="number" min="1" max="'+total+'" value="'+(index+1)+'" onchange="appAction(\'moveListItemToPosition\', {catId:\''+catId+'\', subId:\''+subId+'\', nestedId:\''+(nestedId||'')+'\', listKey:\''+listKey+'\', index:'+index+', position:parseInt(this.value,10)})" style="width:38px;padding:4px;text-align:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:12px">'+
       '<span onclick="appAction(\'startEditListItem\',\''+key+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',13)+'</span>'+
       '<span onclick="appAction(\''+deleteAction+'\', {catId:\''+catId+'\', subId:\''+subId+'\', nestedId:\''+(nestedId||'')+'\', index:'+index+'})" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',13)+'</span>'+
     '</div>';
@@ -2015,6 +2465,155 @@ window.storage = {
       state.feedbackCounts = await computeFeedbackCounts();
       render();
     }
+    else if (action === 'adminReqOpenEditor'){
+      state.adminReqCatId = payload.catId;
+      state.adminReqSubId = payload.subId;
+      state.adminReqExpandedFridge = null;
+      state.adminReqEditingFridge = null;
+      state.adminReqEditingProductIndex = null;
+      state.adminReqError = false;
+      state.screen = 'admin-requisition-editor';
+      render();
+    }
+    else if (action === 'adminReqToggleFridge'){
+      state.adminReqExpandedFridge = (state.adminReqExpandedFridge === payload) ? null : payload;
+      state.adminReqEditingProductIndex = null;
+      render();
+    }
+    else if (action === 'adminReqStartRenameFridge'){
+      state.adminReqEditingFridge = payload;
+      render();
+    }
+    else if (action === 'adminReqCancelRenameFridge'){
+      state.adminReqEditingFridge = null;
+      render();
+    }
+    else if (action === 'adminReqSaveRenameFridge'){
+      const input = document.getElementById('rename-fridge-input');
+      const newName = (input.value||'').trim();
+      if (newName){
+        const sub = findSublieu(state.adminReqCatId, state.adminReqSubId);
+        sub.products.forEach(function(p){ if ((p.location||'Autres') === payload) p.location = newName; });
+        await saveStructure(state.structure);
+        if (state.adminReqExpandedFridge === payload) state.adminReqExpandedFridge = newName;
+      }
+      state.adminReqEditingFridge = null;
+      render();
+    }
+    else if (action === 'adminReqDeleteFridge'){
+      const sub = findSublieu(state.adminReqCatId, state.adminReqSubId);
+      sub.products = sub.products.filter(function(p){ return (p.location||'Autres') !== payload; });
+      await saveStructure(state.structure);
+      if (state.adminReqExpandedFridge === payload) state.adminReqExpandedFridge = null;
+      render();
+    }
+    else if (action === 'adminReqMoveFridgeToPosition'){
+      const sub = findSublieu(state.adminReqCatId, state.adminReqSubId);
+      const fridges = [];
+      sub.products.forEach(function(p){ const loc = p.location||'Autres'; if (fridges.indexOf(loc)===-1) fridges.push(loc); });
+      const idx = fridges.indexOf(payload.fridgeName);
+      let pos = (payload.position||1) - 1;
+      if (pos < 0) pos = 0;
+      if (pos > fridges.length-1) pos = fridges.length-1;
+      if (idx >= 0 && pos !== idx){
+        const [f] = fridges.splice(idx, 1);
+        fridges.splice(pos, 0, f);
+        const grouped = {};
+        sub.products.forEach(function(p){ const loc = p.location||'Autres'; grouped[loc] = grouped[loc]||[]; grouped[loc].push(p); });
+        let newProducts = [];
+        fridges.forEach(function(fr){ newProducts = newProducts.concat(grouped[fr]||[]); });
+        sub.products = newProducts;
+        await saveStructure(state.structure);
+      }
+      render();
+    }
+    else if (action === 'adminReqAddFridge'){
+      const nameInput = document.getElementById('new-fridge-name');
+      const prodInput = document.getElementById('new-fridge-first-product');
+      const unitInput = document.getElementById('new-fridge-first-unit');
+      const parInput = document.getElementById('new-fridge-first-parstock');
+      const name = (nameInput.value||'').trim();
+      const prodName = (prodInput.value||'').trim();
+      if (!name || !prodName){
+        state.adminReqError = 'Indique un nom de frigo et un premier produit.';
+        render();
+        return;
+      }
+      const sub = findSublieu(state.adminReqCatId, state.adminReqSubId);
+      const parVal = parInput.value.trim();
+      sub.products.push({ location: name, name: prodName, unit: unitInput.value.trim(), parstock: parVal ? Number(parVal) : null });
+      await saveStructure(state.structure);
+      state.adminReqError = false;
+      render();
+    }
+    else if (action === 'adminReqStartEditProduct'){
+      state.adminReqEditingProductIndex = payload;
+      render();
+    }
+    else if (action === 'adminReqCancelEditProduct'){
+      state.adminReqEditingProductIndex = null;
+      render();
+    }
+    else if (action === 'adminReqSaveEditProduct'){
+      const sub = findSublieu(state.adminReqCatId, state.adminReqSubId);
+      const product = sub.products[payload];
+      if (product){
+        const name = document.getElementById('edit-product-name').value.trim();
+        const unit = document.getElementById('edit-product-unit').value.trim();
+        const parVal = document.getElementById('edit-product-parstock').value.trim();
+        if (name) product.name = name;
+        product.unit = unit;
+        product.parstock = parVal ? Number(parVal) : null;
+        await saveStructure(state.structure);
+      }
+      state.adminReqEditingProductIndex = null;
+      render();
+    }
+    else if (action === 'adminReqDeleteProduct'){
+      const sub = findSublieu(state.adminReqCatId, state.adminReqSubId);
+      sub.products.splice(payload, 1);
+      await saveStructure(state.structure);
+      render();
+    }
+    else if (action === 'adminReqMoveProductToPosition'){
+      const sub = findSublieu(state.adminReqCatId, state.adminReqSubId);
+      const gi = payload.globalIndex;
+      const loc = sub.products[gi] ? (sub.products[gi].location||'Autres') : null;
+      if (loc !== null){
+        const indices = [];
+        sub.products.forEach(function(p, i){ if ((p.location||'Autres') === loc) indices.push(i); });
+        const localIdx = indices.indexOf(gi);
+        let pos = (payload.position||1) - 1;
+        if (pos < 0) pos = 0;
+        if (pos > indices.length-1) pos = indices.length-1;
+        if (pos !== localIdx){
+          const [item] = sub.products.splice(gi, 1);
+          const newIndices = [];
+          sub.products.forEach(function(p, i){ if ((p.location||'Autres') === loc) newIndices.push(i); });
+          const insertAt = pos >= newIndices.length ? (newIndices.length ? newIndices[newIndices.length-1]+1 : sub.products.length) : newIndices[pos];
+          sub.products.splice(insertAt, 0, item);
+          await saveStructure(state.structure);
+        }
+      }
+      render();
+    }
+    else if (action === 'adminReqAddProduct'){
+      const sub = findSublieu(state.adminReqCatId, state.adminReqSubId);
+      const fridges = [];
+      sub.products.forEach(function(p){ const loc = p.location||'Autres'; if (fridges.indexOf(loc)===-1) fridges.push(loc); });
+      const fIdx = fridges.indexOf(payload);
+      const name = (document.getElementById('new-product-name-'+fIdx).value||'').trim();
+      const unit = (document.getElementById('new-product-unit-'+fIdx).value||'').trim();
+      const parVal = (document.getElementById('new-product-parstock-'+fIdx).value||'').trim();
+      if (!name){ render(); return; }
+      let insertAt = -1;
+      for (let i=0;i<sub.products.length;i++){ if ((sub.products[i].location||'Autres') === payload) insertAt = i; }
+      const newProduct = { location: payload, name: name, unit: unit, parstock: parVal ? Number(parVal) : null };
+      if (insertAt === -1) sub.products.push(newProduct);
+      else sub.products.splice(insertAt+1, 0, newProduct);
+      await saveStructure(state.structure);
+      render();
+    }
     else if (action === 'adminToggleCategory'){
       state.adminExpandedCategory = state.adminExpandedCategory === payload ? null : payload;
       state.adminExpandedSublieu = null;
@@ -2096,25 +2695,19 @@ window.storage = {
       await saveStructure(state.structure);
       render();
     }
-    else if (action === 'moveListItemUp'){
+    else if (action === 'moveListItemToPosition'){
       const target = payload.listKey === 'fridges' ? findSublieu(payload.catId, payload.subId) : findSublieu(payload.catId, payload.nestedId || payload.subId);
       const list = payload.listKey === 'fridges' ? target.fridges : target.products;
       const idx = payload.index;
-      if (idx > 0){
-        const tmp = list[idx-1]; list[idx-1] = list[idx]; list[idx] = tmp;
+      let pos = (payload.position||1) - 1;
+      if (pos < 0) pos = 0;
+      if (pos > list.length-1) pos = list.length-1;
+      if (pos !== idx){
+        const [item] = list.splice(idx, 1);
+        list.splice(pos, 0, item);
         await saveStructure(state.structure);
-        render();
       }
-    }
-    else if (action === 'moveListItemDown'){
-      const target = payload.listKey === 'fridges' ? findSublieu(payload.catId, payload.subId) : findSublieu(payload.catId, payload.nestedId || payload.subId);
-      const list = payload.listKey === 'fridges' ? target.fridges : target.products;
-      const idx = payload.index;
-      if (idx >= 0 && idx < list.length - 1){
-        const tmp = list[idx+1]; list[idx+1] = list[idx]; list[idx] = tmp;
-        await saveStructure(state.structure);
-        render();
-      }
+      render();
     }
     else if (action === 'toggleCategory'){
       state.expanded = state.expanded === payload ? null : payload;
@@ -2145,6 +2738,8 @@ window.storage = {
       }
       if (sub.type === 'requisition'){
         state.requisitionSaved = false;
+        state.requisitionDraft = {};
+        state.requisitionFridgeIndex = 0;
         state.screen = 'requisition-form';
         render();
         return;
@@ -2212,19 +2807,51 @@ window.storage = {
       state.temperatureSaved = true;
       render();
     }
+    else if (action === 'requisitionNextFridge' || action === 'requisitionPrevFridge'){
+      const sub = findSublieu(state.categoryId, state.sublieuId);
+      captureCurrentFridgeInputs(sub);
+      const locations = getRequisitionLocations(sub);
+      let idx = state.requisitionFridgeIndex || 0;
+      idx += (action === 'requisitionNextFridge') ? 1 : -1;
+      if (idx < 0) idx = locations.length - 1;
+      if (idx >= locations.length) idx = 0;
+      state.requisitionFridgeIndex = idx;
+      render();
+    }
     else if (action === 'saveRequisition'){
       const cat = findCategory(state.categoryId);
       const sub = findSublieu(state.categoryId, state.sublieuId);
       const now = new Date();
       const isRich = sub.products.length > 0 && typeof sub.products[0] === 'object';
-      const products = sub.products.map(function(product, i){
-        const input = document.getElementById('requi-input-'+i);
-        const val = (input && input.value !== '') ? input.value.trim() : '0';
-        if (isRich){
-          return { name: product.name, location: product.location||'', unit: product.unit||'', quantity: val };
-        }
-        return { name: product, quantity: val };
-      }).filter(function(p){ return p.quantity && p.quantity !== '0'; });
+      let products;
+      if (isRich){
+        captureCurrentFridgeInputs(sub);
+        const draft = state.requisitionDraft || {};
+        const byName = {};
+        Object.keys(draft).forEach(function(key){
+          const val = parseFloat((draft[key]||'').replace(',', '.'));
+          if (!val) return;
+          const sepIdx = key.indexOf('|');
+          const loc = key.slice(0, sepIdx);
+          const name = key.slice(sepIdx+1);
+          if (!byName[name]){
+            const ref = sub.products.find(function(p){ return p.name === name; });
+            byName[name] = { name: name, unit: (ref && ref.unit) || '', locations: [], quantity: 0 };
+          }
+          byName[name].quantity += val;
+          byName[name].locations.push(loc);
+        });
+        products = Object.keys(byName).map(function(name){
+          const item = byName[name];
+          return { name: item.name, location: item.locations.join(' + '), unit: item.unit, quantity: String(item.quantity) };
+        });
+      } else {
+        products = sub.products.map(function(product, i){
+          const input = document.getElementById('requi-input-'+i);
+          const val = (input && input.value !== '') ? input.value.trim() : '0';
+          return { name: product, quantity: val };
+        }).filter(function(p){ return p.quantity && p.quantity !== '0'; });
+      }
       const commentInput = document.getElementById('requisition-comment');
       await addRequisition({
         id: 'requi-'+Date.now(),
@@ -2237,6 +2864,8 @@ window.storage = {
         comment: commentInput ? commentInput.value.trim() : ''
       });
       state.requisitionSaved = true;
+      state.requisitionDraft = {};
+      state.requisitionFridgeIndex = 0;
       render();
     }
     else if (action === 'backToSublieux'){
@@ -2324,27 +2953,18 @@ window.storage = {
       await saveStructure(state.structure);
       render();
     }
-    else if (action === 'moveTaskUp'){
+    else if (action === 'moveTaskToPosition'){
       const sub = findSublieu(payload.catId, payload.subId);
       const idx = sub.tasks.findIndex(t=>t.id===payload.taskId);
-      if (idx > 0){
-        const tmp = sub.tasks[idx-1];
-        sub.tasks[idx-1] = sub.tasks[idx];
-        sub.tasks[idx] = tmp;
+      let target = (payload.position||1) - 1;
+      if (target < 0) target = 0;
+      if (target > sub.tasks.length-1) target = sub.tasks.length-1;
+      if (idx >= 0 && target !== idx){
+        const [item] = sub.tasks.splice(idx, 1);
+        sub.tasks.splice(target, 0, item);
         await saveStructure(state.structure);
-        render();
       }
-    }
-    else if (action === 'moveTaskDown'){
-      const sub = findSublieu(payload.catId, payload.subId);
-      const idx = sub.tasks.findIndex(t=>t.id===payload.taskId);
-      if (idx >= 0 && idx < sub.tasks.length - 1){
-        const tmp = sub.tasks[idx+1];
-        sub.tasks[idx+1] = sub.tasks[idx];
-        sub.tasks[idx] = tmp;
-        await saveStructure(state.structure);
-        render();
-      }
+      render();
     }
   };
 
@@ -2638,6 +3258,34 @@ window.storage = {
     return out;
   }
 
+  function getRequisitionLocations(sub){
+    const locations = [];
+    sub.products.forEach(function(p){
+      const loc = p.location || 'Autres';
+      if (locations.indexOf(loc) === -1) locations.push(loc);
+    });
+    return locations;
+  }
+  function requiInputId(location, name){
+    return 'requi-input-' + (location+'|'+name).replace(/[^a-zA-Z0-9]/g, '_');
+  }
+  function captureCurrentFridgeInputs(sub){
+    const locations = getRequisitionLocations(sub);
+    const idx = Math.max(0, Math.min(state.requisitionFridgeIndex||0, locations.length-1));
+    const currentLocation = locations[idx];
+    if (!currentLocation) return;
+    const productsHere = sub.products.filter(function(p){ return (p.location||'Autres') === currentLocation; });
+    state.requisitionDraft = state.requisitionDraft || {};
+    productsHere.forEach(function(p){
+      const el = document.getElementById(requiInputId(currentLocation, p.name));
+      if (el){
+        const key = currentLocation+'|'+p.name;
+        if (el.value !== ''){ state.requisitionDraft[key] = el.value; }
+        else { delete state.requisitionDraft[key]; }
+      }
+    });
+  }
+
   function screenRequisitionForm(){
     const sub = findSublieu(state.categoryId, state.sublieuId);
     const isRich = sub.products.length > 0 && typeof sub.products[0] === 'object';
@@ -2658,18 +3306,33 @@ window.storage = {
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
 
     if (isRich){
-      let lastLocation = null;
-      sub.products.forEach(function(product, i){
-        if (product.location && product.location !== lastLocation){
-          out += '<div class="mama-title" style="font-size:13px;color:var(--text-accent,#E8432B);margin-top:10px">'+esc(product.location)+'</div>';
-          lastLocation = product.location;
-        }
+      const locations = getRequisitionLocations(sub);
+      let fridgeIndex = state.requisitionFridgeIndex || 0;
+      if (fridgeIndex >= locations.length) fridgeIndex = locations.length-1;
+      if (fridgeIndex < 0) fridgeIndex = 0;
+      const currentLocation = locations[fridgeIndex];
+      const productsHere = sub.products.filter(function(p){ return (p.location||'Autres') === currentLocation; });
+      const draft = state.requisitionDraft || {};
+
+      out += '<div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:4px">'+
+        '<button onclick="appAction(\'requisitionPrevFridge\')" style="width:36px;height:36px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--surface-1);color:var(--text-primary);cursor:pointer;display:flex;align-items:center;justify-content:center">'+icon('back',18)+'</button>'+
+        '<div style="text-align:center;min-width:160px">'+
+          '<div class="mama-title" style="font-size:16px;color:var(--text-accent,#E8432B)">'+esc(currentLocation)+'</div>'+
+          '<div style="font-size:12px;color:var(--text-muted)">Frigo '+(fridgeIndex+1)+' sur '+locations.length+'</div>'+
+        '</div>'+
+        '<button onclick="appAction(\'requisitionNextFridge\')" style="width:36px;height:36px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--surface-1);color:var(--text-primary);cursor:pointer;display:flex;align-items:center;justify-content:center;transform:rotate(180deg)">'+icon('back',18)+'</button>'+
+      '</div>';
+      out += '<p style="text-align:center;color:var(--text-muted);font-size:12px;margin:0 0 8px">Fais défiler pour passer au frigo suivant. Un même produit dans plusieurs frigos sera additionné automatiquement.</p>';
+
+      productsHere.forEach(function(product){
+        const key = currentLocation+'|'+product.name;
+        const draftVal = draft[key] || '';
         out += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1)">'+
           '<div style="flex:1">'+
             '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">'+esc(product.name)+'</div>'+
-            '<div style="font-size:11px;color:var(--text-muted)">'+esc(product.unit||'')+(product.parstock?' · parstock '+esc(product.parstock):'')+'</div>'+
+            '<div style="font-size:11px;color:var(--text-muted)">'+esc(product.unit||'')+(product.parstock!=null?' · stock parfait '+esc(product.parstock):'')+'</div>'+
           '</div>'+
-          '<input id="requi-input-'+i+'" type="text" inputmode="numeric" placeholder="Qté" style="width:64px;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px;text-align:center;flex-shrink:0">'+
+          '<input id="'+requiInputId(currentLocation, product.name)+'" type="text" inputmode="numeric" placeholder="Qté" value="'+esc(draftVal)+'" style="width:64px;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px;text-align:center;flex-shrink:0">'+
         '</div>';
       });
     } else {
@@ -2682,7 +3345,7 @@ window.storage = {
     }
 
     out += '<label style="font-size:14px;color:var(--text-secondary);font-weight:600;margin-top:6px">Commentaires (optionnel)</label>'+
-      '<textarea id="requisition-comment" placeholder="Commentaire (optionnel)" style="width:100%;box-sizing:border-box;min-height:60px;padding:12px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:14px;font-family:inherit;resize:vertical"></textarea>';
+      '<textarea id="requisition-comment" placeholder="Commentaire (optionnel)" style="width:100%;box-sizing:border-box;min-height:60px;padding:12px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:14px;font-family:inherit;resize:vertical">'+(state.requisitionComment?esc(state.requisitionComment):'')+'</textarea>';
     out += '<button onclick="appAction(\'saveRequisition\')" style="width:100%;padding:16px;border-radius:10px;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;border:2.5px solid var(--border-strong,#000);box-shadow:3px 3px 0 var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;margin-top:4px">Valider la réqui</button>';
     out += '</div>';
 
@@ -3248,20 +3911,6 @@ window.storage = {
       '</div>'+
     '</div>';
 
-    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
-    if (users.length === 0){
-      out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucun accès personnel créé pour l\'instant — les codes génériques restent valables.</div>';
-    }
-    users.forEach(function(u){
-      out += '<div style="padding:12px 14px;border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
-        '<div style="width:10px;height:10px;border-radius:50%;background:'+(roleColors[u.role]||'#ccc')+';border:1px solid var(--border);flex-shrink:0"></div>'+
-        '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(u.name)+'</div>'+
-        '<div style="font-size:12px;color:var(--text-secondary)">'+esc(roleLabels[u.role]||u.role)+' · code '+esc(u.code)+'</div></div>'+
-        '<span onclick="appAction(\'deleteAccessUser\',\''+u.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
-      '</div>';
-    });
-    out += '</div>';
-
     out += '<div style="padding:16px;margin:8px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1)">'+
       '<div class="mama-title" style="font-size:14px;color:var(--text-primary);margin-bottom:10px">Ajouter un accès</div>'+
       '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Prénom / Nom</label>'+
@@ -3275,6 +3924,20 @@ window.storage = {
       (state.accessUserError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0 0 10px">'+esc(state.accessUserError)+'</p>' : '')+
       '<button onclick="appAction(\'addAccessUser\')" style="width:100%;padding:12px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.2px;box-shadow:2px 2px 0 var(--border-strong,#000);cursor:pointer">Ajouter</button>'+
     '</div>';
+
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    if (users.length === 0){
+      out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucun accès personnel créé pour l\'instant — les codes génériques restent valables.</div>';
+    }
+    users.forEach(function(u){
+      out += '<div style="padding:12px 14px;border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
+        '<div style="width:10px;height:10px;border-radius:50%;background:'+(roleColors[u.role]||'#ccc')+';border:1px solid var(--border);flex-shrink:0"></div>'+
+        '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(u.name)+'</div>'+
+        '<div style="font-size:12px;color:var(--text-secondary)">'+esc(roleLabels[u.role]||u.role)+' · code '+esc(u.code)+'</div></div>'+
+        '<span onclick="appAction(\'deleteAccessUser\',\''+u.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
+      '</div>';
+    });
+    out += '</div>';
     return out;
   }
 
@@ -3663,6 +4326,96 @@ window.storage = {
     return out;
   }
 
+  function screenAdminRequisitionEditor(){
+    const catId = state.adminReqCatId;
+    const subId = state.adminReqSubId;
+    const sub = findSublieu(catId, subId);
+    const products = sub.products;
+    const fridges = [];
+    products.forEach(function(p){ const loc = p.location || 'Autres'; if (fridges.indexOf(loc) === -1) fridges.push(loc); });
+
+    let out = '<div style="padding:20px 16px 8px">'+
+      '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+        '<div onclick="appAction(\'goAdmin\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<h1 class="mama-title" style="font-size:17px;color:var(--text-primary);margin:0;flex:1">Gérer : '+esc(sub.name)+'</h1>'+
+      '</div>'+
+    '</div>';
+
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+
+    fridges.forEach(function(fridgeName, fIdx){
+      const fridgeOpen = state.adminReqExpandedFridge === fridgeName;
+      const renamingThis = state.adminReqEditingFridge === fridgeName;
+      const productsHere = [];
+      products.forEach(function(p, gi){ if ((p.location||'Autres') === fridgeName) productsHere.push(gi); });
+
+      out += '<div style="border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);overflow:hidden">';
+      if (renamingThis){
+        out += '<div style="display:flex;gap:6px;align-items:center;padding:10px 12px">'+
+          '<input id="rename-fridge-input" value="'+esc(fridgeName)+'" style="flex:1;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px">'+
+          '<span onclick="appAction(\'adminReqSaveRenameFridge\',\''+esc(fridgeName)+'\')" style="color:var(--text-success,#1F7A3D);cursor:pointer">'+icon('check',16)+'</span>'+
+          '<span onclick="appAction(\'adminReqCancelRenameFridge\')" style="color:var(--text-muted);cursor:pointer">'+icon('close',14)+'</span>'+
+        '</div>';
+      } else {
+        out += '<div onclick="appAction(\'adminReqToggleFridge\',\''+esc(fridgeName)+'\')" style="display:flex;align-items:center;gap:8px;padding:12px 14px;cursor:pointer">'+
+          '<input type="number" min="1" max="'+fridges.length+'" value="'+(fIdx+1)+'" onclick="event.stopPropagation()" onchange="event.stopPropagation();appAction(\'adminReqMoveFridgeToPosition\', {fridgeName:\''+esc(fridgeName)+'\', position:parseInt(this.value,10)})" style="width:38px;padding:4px;text-align:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:12px;flex-shrink:0">'+
+          '<span style="flex:1;font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(fridgeName)+'</span>'+
+          '<span onclick="event.stopPropagation();appAction(\'adminReqStartRenameFridge\',\''+esc(fridgeName)+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',14)+'</span>'+
+          '<span onclick="event.stopPropagation();appAction(\'adminReqDeleteFridge\',\''+esc(fridgeName)+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',14)+'</span>'+
+          '<span style="color:var(--text-muted);transform:rotate('+(fridgeOpen?'180':'0')+'deg)">'+icon('chevronDown',16)+'</span>'+
+        '</div>';
+      }
+
+      if (fridgeOpen && !renamingThis){
+        out += '<div style="border-top:1px solid var(--border);padding:10px 14px;background:var(--surface-0);display:flex;flex-direction:column;gap:6px">';
+        productsHere.forEach(function(gi, localIdx){
+          const product = products[gi];
+          const editingThis = state.adminReqEditingProductIndex === gi;
+          if (editingThis){
+            out += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:6px 0">'+
+              '<input id="edit-product-name" value="'+esc(product.name)+'" placeholder="Nom" style="flex:2;min-width:120px;padding:7px;border-radius:6px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12px">'+
+              '<input id="edit-product-unit" value="'+esc(product.unit||'')+'" placeholder="Unité" style="width:70px;padding:7px;border-radius:6px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12px">'+
+              '<input id="edit-product-parstock" value="'+(product.parstock!=null?esc(product.parstock):'')+'" placeholder="Stock parfait" style="width:90px;padding:7px;border-radius:6px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12px">'+
+              '<span onclick="appAction(\'adminReqSaveEditProduct\','+gi+')" style="color:var(--text-success,#1F7A3D);cursor:pointer">'+icon('check',16)+'</span>'+
+              '<span onclick="appAction(\'adminReqCancelEditProduct\')" style="color:var(--text-muted);cursor:pointer">'+icon('close',14)+'</span>'+
+            '</div>';
+          } else {
+            out += '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px;color:var(--text-secondary);gap:5px">'+
+              '<span style="flex:1">'+esc(product.name)+' <span style="color:var(--text-muted);font-size:11px">('+esc(product.unit||'')+(product.parstock!=null?' · '+esc(product.parstock):'')+')</span></span>'+
+              '<input type="number" min="1" max="'+productsHere.length+'" value="'+(localIdx+1)+'" onchange="appAction(\'adminReqMoveProductToPosition\', {globalIndex:'+gi+', position:parseInt(this.value,10)})" style="width:36px;padding:4px;text-align:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12px">'+
+              '<span onclick="appAction(\'adminReqStartEditProduct\','+gi+')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',13)+'</span>'+
+              '<span onclick="appAction(\'adminReqDeleteProduct\','+gi+')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',13)+'</span>'+
+            '</div>';
+          }
+        });
+        out += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+
+          '<input id="new-product-name-'+fIdx+'" placeholder="Nouveau produit" style="flex:2;min-width:120px;padding:7px;border-radius:6px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12px">'+
+          '<input id="new-product-unit-'+fIdx+'" placeholder="Unité" style="width:70px;padding:7px;border-radius:6px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12px">'+
+          '<input id="new-product-parstock-'+fIdx+'" placeholder="Stock parfait" style="width:90px;padding:7px;border-radius:6px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12px">'+
+          '<button onclick="appAction(\'adminReqAddProduct\',\''+esc(fridgeName)+'\')" style="padding:7px 10px;border-radius:6px;border:none;background:var(--text-accent,#185FA5);color:#fff;cursor:pointer">'+icon('plus',13)+'</button>'+
+        '</div>';
+        out += '</div>';
+      }
+      out += '</div>';
+    });
+
+    out += '<div style="padding:14px;border:2px dashed var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);margin-top:6px">'+
+      '<div class="mama-title" style="font-size:13px;color:var(--text-primary);margin-bottom:8px">Ajouter un frigo</div>'+
+      '<input id="new-fridge-name" placeholder="Nom du frigo" style="width:100%;box-sizing:border-box;padding:8px;margin-bottom:6px;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px">'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+        '<input id="new-fridge-first-product" placeholder="Premier produit" style="flex:2;min-width:120px;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px">'+
+        '<input id="new-fridge-first-unit" placeholder="Unité" style="width:70px;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px">'+
+        '<input id="new-fridge-first-parstock" placeholder="Stock parfait" style="width:90px;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px">'+
+      '</div>'+
+      (state.adminReqError ? '<p style="color:var(--text-danger,#A32D2D);font-size:12px;margin:8px 0 0">'+esc(state.adminReqError)+'</p>' : '')+
+      '<button onclick="appAction(\'adminReqAddFridge\')" style="width:100%;margin-top:8px;padding:10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:13px;font-weight:800;text-transform:uppercase;cursor:pointer">Ajouter le frigo</button>'+
+    '</div>';
+
+    out += '</div>';
+    out += bottomNav('menu');
+    return out;
+  }
+
   function screenAdmin(){
     let out = '<div style="padding:20px 16px 8px">'+
       '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
@@ -3688,12 +4441,15 @@ window.storage = {
 
         cat.sublieux.forEach(function(sub){
           const subOpen = state.adminExpandedSublieu === sub.id;
+          const subClickAction = sub.type === 'requisition'
+            ? "appAction('adminReqOpenEditor', {catId:'"+cat.id+"', subId:'"+sub.id+"'})"
+            : "appAction('adminToggleSublieu','"+sub.id+"')";
           out += '<div style="border:1.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);overflow:hidden">';
-          out += '<div onclick="appAction(\'adminToggleSublieu\',\''+sub.id+'\')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer">'+
+          out += '<div onclick="'+subClickAction+'" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer">'+
             '<div style="flex:1;font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(sub.name)+
             '</div>'+
             '<div onclick="event.stopPropagation();appAction(\'deleteSublieu\', {catId:\''+cat.id+'\', subId:\''+sub.id+'\'})" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',14)+'</div>'+
-            '<div style="color:var(--text-muted);transform:rotate('+(subOpen?'180':'0')+'deg)">'+icon('chevronDown',16)+'</div>'+
+            (sub.type === 'requisition' ? icon('chevronRight',16) : '<div style="color:var(--text-muted);transform:rotate('+(subOpen?'180':'0')+'deg)">'+icon('chevronDown',16)+'</div>')+
           '</div>';
 
           if (subOpen){
@@ -3719,11 +4475,14 @@ window.storage = {
             } else if (sub.type === 'submenu'){
               sub.sublieux.forEach(function(nested){
                 const nestedOpen = state.adminExpandedNested === nested.id;
+                const nestedClickAction = nested.type === 'requisition'
+                  ? "appAction('adminReqOpenEditor', {catId:'"+cat.id+"', subId:'"+nested.id+"'})"
+                  : "appAction('adminToggleNested','"+nested.id+"')";
                 out += '<div style="border:1px solid var(--border-strong,var(--border));border-radius:8px;background:var(--surface-1);overflow:hidden;margin-bottom:6px">';
-                out += '<div onclick="appAction(\'adminToggleNested\',\''+nested.id+'\')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer">'+
+                out += '<div onclick="'+nestedClickAction+'" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer">'+
                   '<span style="flex:1;font-size:13px;font-weight:600;color:var(--text-primary)">'+esc(nested.name)+'</span>'+
                   '<span onclick="event.stopPropagation();appAction(\'deleteNestedSublieu\', {catId:\''+cat.id+'\', subId:\''+sub.id+'\', nestedId:\''+nested.id+'\'})" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',13)+'</span>'+
-                  '<span style="color:var(--text-muted);transform:rotate('+(nestedOpen?'180':'0')+'deg)">'+icon('chevronDown',14)+'</span>'+
+                  (nested.type === 'requisition' ? icon('chevronRight',14) : '<span style="color:var(--text-muted);transform:rotate('+(nestedOpen?'180':'0')+'deg)">'+icon('chevronDown',14)+'</span>')+
                 '</div>';
                 if (nestedOpen){
                   out += '<div style="border-top:1px solid var(--border);padding:8px 10px">';
@@ -3797,6 +4556,7 @@ window.storage = {
     else if (state.screen === 'manager-locked') html = screenManagerLocked();
     else if (state.screen === 'other-access-menu') html = screenOtherAccessMenu();
     else if (state.screen === 'access-management') html = screenAccessManagement();
+    else if (state.screen === 'admin-requisition-editor') html = screenAdminRequisitionEditor();
     else if (state.screen === 'admin-menu') html = screenAdminMenu();
     else if (state.screen === 'mama-gang-management') html = screenMamaGangManagement();
     else if (state.screen === 'historique') html = screenHistorique();
