@@ -765,6 +765,30 @@ window.storage = {
               {id:'nqa-22', label:'Changer tous les sacs poubelles', obligatoire:true},
               {id:'nqa-23', label:'Températures du frigo lait', obligatoire:true}
           ]},
+          { id:'releve-temperatures-pdj', name:'Relevé de température PDJ', icon:'thermometer', type:'temperatures', checklistItems:[
+              {id:'plaques-refrigerantes', label:'Changement des plaques réfrigérantes (9h00)', obligatoire:true}
+          ], fridges:[
+              {group:'Froid', name:'Fruits coupés'},
+              {group:'Froid', name:'Fromage blanc'},
+              {group:'Froid', name:'Salade de fruits'},
+              {group:'Froid', name:'Compote'},
+              {group:'Froid', name:'Lait'},
+              {group:'Froid', name:'Lait végétal'},
+              {group:'Froid', name:'Beurre'},
+              {group:'Froid', name:'Yaourt'},
+              {group:'Froid', name:'Fromage 1'},
+              {group:'Froid', name:'Fromage 2'},
+              {group:'Froid', name:'Fromage 3'},
+              {group:'Froid', name:'Charcut 1'},
+              {group:'Froid', name:'Charcut 2'},
+              {group:'Froid', name:'Charcut 3'},
+              {group:'Chaud', name:'Œufs brouillés'},
+              {group:'Chaud', name:'Tomates confites'},
+              {group:'Chaud', name:'Champignon'},
+              {group:'Chaud', name:'Beans Tomate'},
+              {group:'Chaud', name:'Bacon'},
+              {group:'Chaud', name:'Saucisse de volaille'}
+          ]},
           { id:'grand-nettoyage-dimanche', name:'Nettoyage Hebdo', icon:'archive', type:'checklist', tasks:[
               {id:'gn-1', label:'Nettoyer l\'îlot central', obligatoire:true},
               {id:'gn-2', label:'Nettoyer le frigo eau + vin', obligatoire:true},
@@ -992,6 +1016,9 @@ window.storage = {
     historique: [],
     pertes: [],
     historiqueMonth: null,
+    historiqueTypeFilter: 'tous',
+    temperatureChecklistChecked: {},
+    temperatureChecklistError: false,
     copyFeedback: false,
     perteSaved: false,
     requisitionFridgeIndex: 0,
@@ -1197,6 +1224,13 @@ window.storage = {
         roof.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='fermeture').sublieux.find(s=>s.id==='fermeture-roof').tasks));
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
+    }
+    const arrieresCat = structure.categories.find(c=>c.id==='arrieres');
+    if (arrieresCat && !arrieresCat.sublieux.some(s=>s.id==='releve-temperatures-pdj')){
+      const defaultPdj = DEFAULT_STRUCTURE.categories.find(c=>c.id==='arrieres').sublieux.find(s=>s.id==='releve-temperatures-pdj');
+      const insertIdx = arrieresCat.sublieux.findIndex(s=>s.id==='nettoyage-quotidien-arrieres');
+      arrieresCat.sublieux.splice(insertIdx+1, 0, JSON.parse(JSON.stringify(defaultPdj)));
+      await window.storage.set('structure', JSON.stringify(structure), true);
     }
     return structure;
   }
@@ -2113,6 +2147,11 @@ window.storage = {
       state.historiqueZone = payload;
       state.historiqueReportId = null;
       state.historiqueTempId = null;
+      state.historiqueTypeFilter = 'tous';
+      render();
+    }
+    else if (action === 'setHistoriqueTypeFilter'){
+      state.historiqueTypeFilter = payload;
       render();
     }
     else if (action === 'backHistoriqueZones'){
@@ -2770,6 +2809,8 @@ window.storage = {
       }
       if (sub.type === 'temperatures'){
         state.temperatureSaved = false;
+        state.temperatureChecklistChecked = {};
+        state.temperatureChecklistError = false;
         state.screen = 'temperatures-form';
         render();
         return;
@@ -2824,13 +2865,28 @@ window.storage = {
       state.perteSaved = true;
       render();
     }
+    else if (action === 'toggleTemperatureChecklistItem'){
+      state.temperatureChecklistChecked = state.temperatureChecklistChecked || {};
+      state.temperatureChecklistChecked[payload] = !state.temperatureChecklistChecked[payload];
+      state.temperatureChecklistError = false;
+      render();
+    }
     else if (action === 'saveTemperatures'){
       const cat = findCategory(state.categoryId);
       const sub = findSublieu(state.categoryId, state.sublieuId);
+      if (sub.checklistItems && sub.checklistItems.some(function(item){
+        return item.obligatoire && !(state.temperatureChecklistChecked && state.temperatureChecklistChecked[item.id]);
+      })){
+        state.temperatureChecklistError = true;
+        render();
+        return;
+      }
+      state.temperatureChecklistError = false;
       const readings = sub.fridges.map(function(fridge, i){
+        const fridgeName = typeof fridge === 'object' ? fridge.name : fridge;
         const input = document.getElementById('temp-input-'+i);
         const val = (input && input.value !== '') ? input.value.trim() : null;
-        return { fridge: fridge, value: val };
+        return { fridge: fridgeName, value: val };
       });
       const commentInput = document.getElementById('temperature-comment');
       await addTemperatureReading({
@@ -2840,9 +2896,13 @@ window.storage = {
         sublieuName: sub.name,
         when: nowLabel(),
         readings: readings,
+        checklistConfirmed: (sub.checklistItems||[]).filter(function(item){
+          return state.temperatureChecklistChecked && state.temperatureChecklistChecked[item.id];
+        }).map(function(item){ return item.label; }),
         comment: commentInput ? commentInput.value.trim() : ''
       });
       state.temperatureSaved = true;
+      state.temperatureChecklistChecked = {};
       render();
     }
     else if (action === 'requisitionNextFridge' || action === 'requisitionPrevFridge'){
@@ -3294,9 +3354,28 @@ window.storage = {
     }
 
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    if (sub.checklistItems && sub.checklistItems.length > 0){
+      sub.checklistItems.forEach(function(item){
+        const checked = !!(state.temperatureChecklistChecked && state.temperatureChecklistChecked[item.id]);
+        out += '<div onclick="appAction(\'toggleTemperatureChecklistItem\',\''+item.id+'\')" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:'+(checked?'var(--bg-accent,#FFD500)':'var(--surface-1)')+';cursor:pointer">'+
+          '<div style="flex-shrink:0;width:20px;height:20px;border-radius:5px;border:2px solid var(--border-strong,#000);background:'+(checked?'var(--border-strong,#000)':'#fff')+';display:flex;align-items:center;justify-content:center;color:#fff">'+(checked?icon('check',14):'')+'</div>'+
+          '<div style="flex:1;font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(item.label)+(item.obligatoire?' *':'')+'</div>'+
+        '</div>';
+      });
+      if (state.temperatureChecklistError){
+        out += '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0">Coche la case ci-dessus avant d\'enregistrer le relevé.</p>';
+      }
+    }
+    const isGrouped = sub.fridges.length > 0 && typeof sub.fridges[0] === 'object';
+    let lastGroup = null;
     sub.fridges.forEach(function(fridge, i){
+      const fridgeName = isGrouped ? fridge.name : fridge;
+      if (isGrouped && fridge.group !== lastGroup){
+        out += '<div class="mama-title" style="font-size:14px;color:var(--text-accent,#E8432B);margin-top:'+(lastGroup===null?'0':'8px')+'">'+esc(fridge.group)+'</div>';
+        lastGroup = fridge.group;
+      }
       out += '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1)">'+
-        '<div style="flex:1;font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(fridge)+'</div>'+
+        '<div style="flex:1;font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(fridgeName)+'</div>'+
         '<input id="temp-input-'+i+'" type="number" step="0.1" placeholder="°C" style="width:80px;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px;text-align:center">'+
       '</div>';
     });
@@ -4203,6 +4282,13 @@ window.storage = {
         out += '<div style="border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);padding:16px">';
         out += '<div class="mama-title" style="font-size:16px;color:var(--text-primary)">'+esc(t.sublieuName)+'</div>';
         out += '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">'+esc(t.categoryName)+' · Par '+esc(t.operator)+' · '+esc(t.when)+'</div>';
+        if (t.checklistConfirmed && t.checklistConfirmed.length > 0){
+          out += '<div style="margin-top:10px;display:flex;flex-direction:column;gap:4px">';
+          t.checklistConfirmed.forEach(function(label){
+            out += '<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-success,#3B6D11)">'+icon('check',14)+'<span>'+esc(label)+'</span></div>';
+          });
+          out += '</div>';
+        }
         if (t.comment){
           out += '<div style="font-size:13px;color:var(--text-primary);margin-top:12px;padding:10px;border-radius:8px;background:var(--surface-0)">'+esc(t.comment)+'</div>';
         }
@@ -4256,12 +4342,32 @@ window.storage = {
     if (state.historiqueZone){
       const reports = state.historique.filter(function(h){ return h.categoryName === state.historiqueZone; }).map(function(h){ return { kind:'checklist', data:h }; });
       const tempReadings = (state.temperatures||[]).filter(function(t){ return t.categoryName === state.historiqueZone; }).map(function(t){ return { kind:'temperature', data:t }; });
-      const all = reports.concat(tempReadings);
+      let all = reports.concat(tempReadings);
+      const typeFilter = state.historiqueTypeFilter || 'tous';
+      if (typeFilter === 'temperature'){
+        all = all.filter(function(item){ return item.kind === 'temperature'; });
+      } else if (typeFilter === 'nettoyage'){
+        all = all.filter(function(item){ return item.kind === 'checklist' && /nettoyage/i.test(item.data.sublieuName); });
+      } else if (typeFilter === 'checklists'){
+        all = all.filter(function(item){ return item.kind === 'checklist' && !/nettoyage/i.test(item.data.sublieuName); });
+      }
       let out = '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
       out += '<div onclick="appAction(\'backHistoriqueZones\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;margin-bottom:4px;font-size:14px">'+icon('back',18)+'<span>Retour aux zones</span></div>';
       out += '<div class="mama-title" style="font-size:14px;color:var(--text-secondary);margin-bottom:2px">Rapports</div>';
+      const filterOptions = [
+        {id:'tous', label:'Tous'},
+        {id:'checklists', label:'Checklists'},
+        {id:'nettoyage', label:'Nettoyage'},
+        {id:'temperature', label:'Température'}
+      ];
+      out += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">';
+      filterOptions.forEach(function(f){
+        const active = typeFilter === f.id;
+        out += '<button onclick="appAction(\'setHistoriqueTypeFilter\',\''+f.id+'\')" style="padding:7px 12px;border-radius:999px;border:1.5px solid '+(active?'var(--text-accent,#185FA5)':'var(--border)')+';background:'+(active?'var(--text-accent,#185FA5)':'var(--surface-1)')+';color:'+(active?'#fff':'var(--text-secondary)')+';font-size:12px;font-weight:700;cursor:pointer">'+f.label+'</button>';
+      });
+      out += '</div>';
       if (all.length === 0){
-        out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucun rapport pour cette zone.</div>';
+        out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucun rapport pour ce filtre.</div>';
       }
       all.forEach(function(item){
         const r = item.data;
