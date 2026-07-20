@@ -789,6 +789,16 @@ window.storage = {
               {group:'Chaud', name:'Bacon'},
               {group:'Chaud', name:'Saucisse de volaille'}
           ]},
+          { id:'tracabilite-matin', name:'Feuille de Traçabilité Matin', icon:'archive', type:'tracabilite', products:[
+              {name:'Lait entier / demi-écrémé', isBeurre:false},
+              {name:'Lait d\'amande / Lait d\'avoine', isBeurre:false},
+              {name:'Jus d\'orange / pamplemousse', isBeurre:false},
+              {name:'Jus de pomme', isBeurre:false},
+              {name:'Yaourt', isBeurre:false},
+              {name:'Sirop d\'érable', isBeurre:false},
+              {name:'Beurre demi-sel', isBeurre:true},
+              {name:'Beurre doux', isBeurre:true}
+          ]},
           { id:'grand-nettoyage-dimanche', name:'Nettoyage Hebdo', icon:'archive', type:'checklist', tasks:[
               {id:'gn-1', label:'Nettoyer l\'îlot central', obligatoire:true},
               {id:'gn-2', label:'Nettoyer le frigo eau + vin', obligatoire:true},
@@ -1019,6 +1029,9 @@ window.storage = {
     historiqueTypeFilter: 'tous',
     temperatureChecklistChecked: {},
     temperatureChecklistError: false,
+    tracabilite: [],
+    tracabiliteSaved: false,
+    historiqueTracaId: null,
     copyFeedback: false,
     perteSaved: false,
     requisitionFridgeIndex: 0,
@@ -1232,6 +1245,19 @@ window.storage = {
       arrieresCat.sublieux.splice(insertIdx+1, 0, JSON.parse(JSON.stringify(defaultPdj)));
       await window.storage.set('structure', JSON.stringify(structure), true);
     }
+    if (arrieresCat && arrieresCat.sublieux.some(s=>s.id==='releve-temperatures-pdj') && !arrieresCat.sublieux.find(s=>s.id==='releve-temperatures-pdj').checklistItems){
+      const pdjSub = arrieresCat.sublieux.find(s=>s.id==='releve-temperatures-pdj');
+      const defaultPdj = DEFAULT_STRUCTURE.categories.find(c=>c.id==='arrieres').sublieux.find(s=>s.id==='releve-temperatures-pdj');
+      pdjSub.checklistItems = JSON.parse(JSON.stringify(defaultPdj.checklistItems));
+      await window.storage.set('structure', JSON.stringify(structure), true);
+    }
+    if (arrieresCat && !arrieresCat.sublieux.some(s=>s.id==='tracabilite-matin')){
+      const defaultTraca = DEFAULT_STRUCTURE.categories.find(c=>c.id==='arrieres').sublieux.find(s=>s.id==='tracabilite-matin');
+      const insertIdx2 = arrieresCat.sublieux.findIndex(s=>s.id==='releve-temperatures-pdj');
+      const pos = insertIdx2 >= 0 ? insertIdx2+1 : arrieresCat.sublieux.length;
+      arrieresCat.sublieux.splice(pos, 0, JSON.parse(JSON.stringify(defaultTraca)));
+      await window.storage.set('structure', JSON.stringify(structure), true);
+    }
     return structure;
   }
   let saveStructureTimer = null;
@@ -1306,6 +1332,19 @@ window.storage = {
     const list = await getTemperatures();
     list.unshift(entry);
     await window.storage.set('temperatures', JSON.stringify(list.slice(0,2000)), true);
+  }
+  async function getTracabilite(){
+    try {
+      const res = await window.storage.get('tracabilite', true);
+      return JSON.parse(res.value);
+    } catch(e){
+      return [];
+    }
+  }
+  async function addTracabiliteRecord(entry){
+    const list = await getTracabilite();
+    list.unshift(entry);
+    await window.storage.set('tracabilite', JSON.stringify(list.slice(0,2000)), true);
   }
   async function getRequisitions(){
     try {
@@ -2128,14 +2167,16 @@ window.storage = {
     }
     else if (action === 'goHistorique'){
       if (state.managerUnlocked){
-        const [historique, pertes, temperatures] = await Promise.all([getHistorique(), getPertes(), getTemperatures()]);
+        const [historique, pertes, temperatures, tracabilite] = await Promise.all([getHistorique(), getPertes(), getTemperatures(), getTracabilite()]);
         state.historique = historique;
         state.pertes = pertes;
         state.temperatures = temperatures;
+        state.tracabilite = tracabilite;
         if (!state.historiqueMonth) state.historiqueMonth = monthKeyOf(new Date());
         state.historiqueZone = null;
         state.historiqueReportId = null;
         state.historiqueTempId = null;
+        state.historiqueTracaId = null;
         state.screen = 'historique';
       } else {
         state.lockedFor = 'historique';
@@ -2174,6 +2215,14 @@ window.storage = {
     }
     else if (action === 'backHistoriqueTemp'){
       state.historiqueTempId = null;
+      render();
+    }
+    else if (action === 'openHistoriqueTraca'){
+      state.historiqueTracaId = payload;
+      render();
+    }
+    else if (action === 'backHistoriqueTraca'){
+      state.historiqueTracaId = null;
       render();
     }
     else if (action === 'setHistoriqueMonth'){
@@ -2815,6 +2864,12 @@ window.storage = {
         render();
         return;
       }
+      if (sub.type === 'tracabilite'){
+        state.tracabiliteSaved = false;
+        state.screen = 'tracabilite-form';
+        render();
+        return;
+      }
       if (sub.type === 'requisition'){
         state.requisitionSaved = false;
         state.requisitionDraft = {};
@@ -2869,6 +2924,31 @@ window.storage = {
       state.temperatureChecklistChecked = state.temperatureChecklistChecked || {};
       state.temperatureChecklistChecked[payload] = !state.temperatureChecklistChecked[payload];
       state.temperatureChecklistError = false;
+      render();
+    }
+    else if (action === 'saveTracabilite'){
+      const cat = findCategory(state.categoryId);
+      const sub = findSublieu(state.categoryId, state.sublieuId);
+      const entries = sub.products.map(function(product, i){
+        if (product.isBeurre){
+          const fab = document.getElementById('traca-fab-'+i);
+          const ddm = document.getElementById('traca-ddm-'+i);
+          return { name: product.name, isBeurre: true, fabrication: fab ? fab.value : '', ddm: ddm ? ddm.value : '' };
+        }
+        const dlc = document.getElementById('traca-dlc-'+i);
+        const lot = document.getElementById('traca-lot-'+i);
+        return { name: product.name, isBeurre: false, dlc: dlc ? dlc.value : '', lot: lot ? lot.value.trim() : '' };
+      });
+      await addTracabiliteRecord({
+        id: 'traca-'+Date.now(),
+        operator: state.name,
+        categoryName: cat.name,
+        sublieuName: sub.name,
+        when: nowLabel(),
+        dayKey: dayKeyOf(new Date()),
+        entries: entries
+      });
+      state.tracabiliteSaved = true;
       render();
     }
     else if (action === 'saveTemperatures'){
@@ -3331,6 +3411,50 @@ window.storage = {
       out += '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0">Merci de renseigner au moins le produit et la quantité.</p>';
     }
     out += '<button onclick="appAction(\'savePerte\')" style="width:100%;padding:16px;border:none;border-radius:10px;font-size:15px;font-weight:500;cursor:pointer;background:var(--text-accent,#185FA5);color:#fff">Enregistrer la perte</button>';
+    out += '</div>';
+
+    out += bottomNav('home');
+    return out;
+  }
+
+  function screenTracabiliteForm(){
+    const sub = findSublieu(state.categoryId, state.sublieuId);
+    let out = '<div style="padding:20px 16px 8px">'+
+      '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+        '<div onclick="appAction(\'goHome\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<div style="width:32px;height:32px;border-radius:8px;background:var(--bg-accent,#E6F1FB);color:var(--text-accent,#185FA5);display:flex;align-items:center;justify-content:center">'+icon('archive',18)+'</div>'+
+        '<div style="flex:1"><div style="font-size:16px;font-weight:500;color:var(--text-primary)">'+esc(sub.name)+'</div>'+
+        '<div style="font-size:13px;color:var(--text-secondary)">Vérifié par '+esc(state.name)+'</div></div>'+
+      '</div>'+
+    '</div>';
+
+    if (state.tracabiliteSaved){
+      out += '<div style="margin:8px 16px;padding:14px;border-radius:10px;background:var(--bg-success,#EAF3DE);color:var(--text-success,#3B6D11);font-size:14px">'+
+        'Relevé enregistré. Tu peux en refaire un ci-dessous si besoin.</div>';
+    }
+
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    sub.products.forEach(function(product, i){
+      out += '<div style="padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1)">'+
+        '<div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:8px">'+esc(product.name)+'</div>';
+      if (product.isBeurre){
+        out += '<div style="display:flex;gap:8px">'+
+          '<div style="flex:1"><label style="font-size:12px;color:var(--text-secondary);font-weight:600">Fabrication</label>'+
+          '<input id="traca-fab-'+i+'" type="date" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px"></div>'+
+          '<div style="flex:1"><label style="font-size:12px;color:var(--text-secondary);font-weight:600">DDM</label>'+
+          '<input id="traca-ddm-'+i+'" type="date" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px"></div>'+
+        '</div>';
+      } else {
+        out += '<div style="display:flex;gap:8px">'+
+          '<div style="flex:1"><label style="font-size:12px;color:var(--text-secondary);font-weight:600">DLC</label>'+
+          '<input id="traca-dlc-'+i+'" type="date" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px"></div>'+
+          '<div style="flex:1"><label style="font-size:12px;color:var(--text-secondary);font-weight:600">N° de lot</label>'+
+          '<input id="traca-lot-'+i+'" type="text" placeholder="Ex: L2384" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px"></div>'+
+        '</div>';
+      }
+      out += '</div>';
+    });
+    out += '<button onclick="appAction(\'saveTracabilite\')" style="width:100%;padding:16px;border-radius:10px;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;border:2.5px solid var(--border-strong,#000);box-shadow:3px 3px 0 var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;margin-top:4px">Enregistrer la traçabilité</button>';
     out += '</div>';
 
     out += bottomNav('home');
@@ -4272,6 +4396,35 @@ window.storage = {
   }
 
   function screenHistoriqueChecklists(){
+    // Niveau 3ter : détail d'un relevé de traçabilité précis
+    if (state.historiqueTracaId){
+      const tr = (state.tracabilite||[]).find(function(x){ return x.id === state.historiqueTracaId; });
+      if (!tr){ state.historiqueTracaId = null; }
+      else {
+        let out = '<div style="padding:8px 16px">';
+        out += '<div onclick="appAction(\'backHistoriqueTraca\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;margin-bottom:12px;font-size:14px">'+icon('back',18)+'<span>Retour</span></div>';
+        out += '<div style="border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);padding:16px">';
+        out += '<div class="mama-title" style="font-size:16px;color:var(--text-primary)">'+esc(tr.sublieuName)+'</div>';
+        out += '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">'+esc(tr.categoryName)+' · Par '+esc(tr.operator)+' · '+esc(tr.when)+'</div>';
+        out += '</div>';
+
+        out += '<div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">';
+        (tr.entries||[]).forEach(function(e){
+          out += '<div style="padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1)">'+
+            '<div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:4px">'+esc(e.name)+'</div>';
+          if (e.isBeurre){
+            out += '<div style="font-size:13px;color:var(--text-secondary)">Fabrication : '+(e.fabrication?esc(e.fabrication):'—')+' · DDM : '+(e.ddm?esc(e.ddm):'—')+'</div>';
+          } else {
+            out += '<div style="font-size:13px;color:var(--text-secondary)">DLC : '+(e.dlc?esc(e.dlc):'—')+' · N° de lot : '+(e.lot?esc(e.lot):'—')+'</div>';
+          }
+          out += '</div>';
+        });
+        out += '</div>';
+        out += '</div>';
+        return out;
+      }
+    }
+
     // Niveau 3bis : détail d'un relevé de température précis
     if (state.historiqueTempId){
       const t = (state.temperatures||[]).find(function(x){ return x.id === state.historiqueTempId; });
@@ -4342,10 +4495,13 @@ window.storage = {
     if (state.historiqueZone){
       const reports = state.historique.filter(function(h){ return h.categoryName === state.historiqueZone; }).map(function(h){ return { kind:'checklist', data:h }; });
       const tempReadings = (state.temperatures||[]).filter(function(t){ return t.categoryName === state.historiqueZone; }).map(function(t){ return { kind:'temperature', data:t }; });
-      let all = reports.concat(tempReadings);
+      const tracaReadings = (state.tracabilite||[]).filter(function(t){ return t.categoryName === state.historiqueZone; }).map(function(t){ return { kind:'tracabilite', data:t }; });
+      let all = reports.concat(tempReadings).concat(tracaReadings);
       const typeFilter = state.historiqueTypeFilter || 'tous';
       if (typeFilter === 'temperature'){
         all = all.filter(function(item){ return item.kind === 'temperature'; });
+      } else if (typeFilter === 'tracabilite'){
+        all = all.filter(function(item){ return item.kind === 'tracabilite'; });
       } else if (typeFilter === 'nettoyage'){
         all = all.filter(function(item){ return item.kind === 'checklist' && /nettoyage/i.test(item.data.sublieuName); });
       } else if (typeFilter === 'checklists'){
@@ -4358,7 +4514,8 @@ window.storage = {
         {id:'tous', label:'Tous'},
         {id:'checklists', label:'Checklists'},
         {id:'nettoyage', label:'Nettoyage'},
-        {id:'temperature', label:'Température'}
+        {id:'temperature', label:'Température'},
+        {id:'tracabilite', label:'Traçabilité'}
       ];
       out += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">';
       filterOptions.forEach(function(f){
@@ -4371,7 +4528,7 @@ window.storage = {
       }
       all.forEach(function(item){
         const r = item.data;
-        const action = item.kind === 'temperature' ? 'openHistoriqueTemp' : 'openHistoriqueReport';
+        const action = item.kind === 'temperature' ? 'openHistoriqueTemp' : (item.kind === 'tracabilite' ? 'openHistoriqueTraca' : 'openHistoriqueReport');
         out += '<div onclick="appAction(\''+action+'\',\''+r.id+'\')" style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:space-between">'+
           '<div><div style="font-size:15px;font-weight:600;color:var(--text-primary)">'+esc(r.sublieuName)+'</div>'+
           '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">Par '+esc(r.operator)+' · '+esc(r.when)+'</div></div>'+
@@ -4394,7 +4551,8 @@ window.storage = {
     }
     zoneNames.forEach(function(zoneName){
       const count = state.historique.filter(function(h){ return h.categoryName === zoneName; }).length
-        + (state.temperatures||[]).filter(function(t){ return t.categoryName === zoneName; }).length;
+        + (state.temperatures||[]).filter(function(t){ return t.categoryName === zoneName; }).length
+        + (state.tracabilite||[]).filter(function(t){ return t.categoryName === zoneName; }).length;
       out += '<div onclick="appAction(\'openHistoriqueZone\',\''+escJs(zoneName)+'\')" style="padding:16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:space-between">'+
         '<div class="mama-title" style="font-size:15px;color:var(--text-primary)">'+esc(zoneName)+'</div>'+
         '<div style="display:flex;align-items:center;gap:10px">'+
@@ -4709,6 +4867,7 @@ window.storage = {
     else if (state.screen === 'checklist') html = screenChecklist();
     else if (state.screen === 'pertes-form') html = screenPerteForm();
     else if (state.screen === 'temperatures-form') html = screenTemperatureForm();
+    else if (state.screen === 'tracabilite-form') html = screenTracabiliteForm();
     else if (state.screen === 'requisition-form') html = screenRequisitionForm();
     else if (state.screen === 'manager-locked') html = screenManagerLocked();
     else if (state.screen === 'other-access-menu') html = screenOtherAccessMenu();
