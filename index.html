@@ -2386,6 +2386,8 @@ window.storage = {
     else if (action === 'addMamaGangUser'){
       const name = document.getElementById('mama-gang-user-name').value.trim();
       const code = document.getElementById('mama-gang-user-code').value.trim();
+      const posteEl = document.getElementById('mama-gang-user-poste');
+      const poste = posteEl ? posteEl.value : 'non-attribue';
       if (!name || !/^[0-9]{4}$/.test(code)){
         state.mamaGangUserError = 'Indique un prénom et un code à 4 chiffres.';
         render();
@@ -2397,7 +2399,7 @@ window.storage = {
         render();
         return;
       }
-      list.push({ id:'gang-'+Date.now(), name: name, code: code });
+      list.push({ id:'gang-'+Date.now(), name: name, code: code, poste: poste });
       await saveMamaGangUsers(list);
       state.mamaGangUsers = list;
       state.mamaGangUserError = false;
@@ -2416,6 +2418,8 @@ window.storage = {
     else if (action === 'saveEditMamaGangUser'){
       const name = document.getElementById('mama-gang-user-name').value.trim();
       const code = document.getElementById('mama-gang-user-code').value.trim();
+      const posteEl = document.getElementById('mama-gang-user-poste');
+      const poste = posteEl ? posteEl.value : 'non-attribue';
       if (!name || !/^[0-9]{4}$/.test(code)){
         state.mamaGangUserError = 'Indique un prénom et un code à 4 chiffres.';
         render();
@@ -2428,7 +2432,7 @@ window.storage = {
         return;
       }
       const target = list.find(function(u){ return u.id === state.mamaGangEditingId; });
-      if (target){ target.name = name; target.code = code; }
+      if (target){ target.name = name; target.code = code; target.poste = poste; }
       await saveMamaGangUsers(list);
       state.mamaGangUsers = list;
       state.mamaGangEditingId = null;
@@ -4115,6 +4119,7 @@ window.storage = {
   function screenMamaGangManagement(){
     const users = state.mamaGangUsers || [];
     const editing = state.mamaGangEditingId ? users.find(function(u){ return u.id === state.mamaGangEditingId; }) : null;
+    const posteLabels = { bar:'Bar', salle:'Salle', cuisine:'Cuisine', ateliers:'Ateliers', 'non-attribue':'Non attribué' };
     let out = '<div style="padding:20px 16px 8px">'+
       '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
         '<div onclick="appAction(\'goManagerMenu\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
@@ -4127,13 +4132,18 @@ window.storage = {
     if (users.length === 0){
       out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucun profil créé pour l\'instant — crée un profil par personne de l\'équipe pour qu\'elle puisse se connecter.</div>';
     }
-    users.forEach(function(u){
-      out += '<div style="padding:12px 14px;border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
-        '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(u.name)+'</div>'+
-        '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+'</div></div>'+
-        '<span onclick="appAction(\'editMamaGangUser\',\''+u.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
-        '<span onclick="appAction(\'deleteMamaGangUser\',\''+u.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
-      '</div>';
+    Object.keys(posteLabels).forEach(function(posteKey){
+      const usersForPoste = users.filter(function(u){ return (u.poste || 'non-attribue') === posteKey; });
+      if (usersForPoste.length === 0) return;
+      out += '<div class="mama-title" style="font-size:13px;color:var(--text-accent,#E8432B);margin-top:6px">'+esc(posteLabels[posteKey])+' ('+usersForPoste.length+')</div>';
+      usersForPoste.forEach(function(u){
+        out += '<div style="padding:12px 14px;border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
+          '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(u.name)+'</div>'+
+          '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+'</div></div>'+
+          '<span onclick="appAction(\'editMamaGangUser\',\''+u.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
+          '<span onclick="appAction(\'deleteMamaGangUser\',\''+u.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
+        '</div>';
+      });
     });
     out += '</div>';
 
@@ -4141,6 +4151,10 @@ window.storage = {
       '<div class="mama-title" style="font-size:14px;color:var(--text-primary);margin-bottom:10px">'+(editing?'Modifier le profil':'Ajouter un profil')+'</div>'+
       '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Prénom</label>'+
       '<input id="mama-gang-user-name" type="text" placeholder="Ex: Julie" value="'+(editing?esc(editing.name):'')+'" style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
+      '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Poste</label>'+
+      '<select id="mama-gang-user-poste" style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
+        Object.keys(posteLabels).map(function(p){ return '<option value="'+p+'" '+((editing?(editing.poste||'non-attribue'):'non-attribue')===p?'selected':'')+'>'+posteLabels[p]+'</option>'; }).join('')+
+      '</select>'+
       '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Code personnel (4 chiffres)</label>'+
       '<input id="mama-gang-user-code" type="text" inputmode="numeric" maxlength="4" placeholder="Ex: 1234" value="'+(editing?esc(editing.code):'')+'" style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px;text-align:center;letter-spacing:3px">'+
       (state.mamaGangUserError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0 0 10px">'+esc(state.mamaGangUserError)+'</p>' : '')+
