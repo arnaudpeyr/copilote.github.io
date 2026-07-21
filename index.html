@@ -4183,13 +4183,20 @@ window.storage = {
     if (users.length === 0){
       out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucun accès personnel créé pour l\'instant — les codes génériques restent valables.</div>';
     }
-    users.forEach(function(u){
-      out += '<div style="padding:12px 14px;border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
-        '<div style="width:10px;height:10px;border-radius:50%;background:'+(roleColors[u.role]||'#ccc')+';border:1px solid var(--border);flex-shrink:0"></div>'+
-        '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(u.name)+'</div>'+
-        '<div style="font-size:12px;color:var(--text-secondary)">'+esc(roleLabels[u.role]||u.role)+' · code '+esc(u.code)+'</div></div>'+
-        '<span onclick="appAction(\'deleteAccessUser\',\''+u.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
+    Object.keys(roleLabels).forEach(function(roleKey){
+      const usersForRole = users.filter(function(u){ return u.role === roleKey; });
+      if (usersForRole.length === 0) return;
+      out += '<div style="display:flex;align-items:center;gap:8px;margin-top:6px">'+
+        '<div style="width:10px;height:10px;border-radius:50%;background:'+(roleColors[roleKey]||'#ccc')+';border:1px solid var(--border);flex-shrink:0"></div>'+
+        '<div class="mama-title" style="font-size:13px;color:var(--text-secondary)">'+esc(roleLabels[roleKey])+' ('+usersForRole.length+')</div>'+
       '</div>';
+      usersForRole.forEach(function(u){
+        out += '<div style="padding:12px 14px;border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
+          '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(u.name)+'</div>'+
+          '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+'</div></div>'+
+          '<span onclick="appAction(\'deleteAccessUser\',\''+u.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
+        '</div>';
+      });
     });
     out += '</div>';
     return out;
