@@ -1044,6 +1044,8 @@ window.storage = {
     adminReqEditingFridge: null,
     adminReqEditingProductIndex: null,
     adminReqError: false,
+    accessFormRole: 'mamagang',
+    accessEditingId: null,
     requisitionDraft: {},
     perteError: false,
     loading: true,
@@ -1671,10 +1673,10 @@ window.storage = {
       state.historique = historique;
       let seedUsersChanged = false;
       const oldAdminSeed = seedUsers.find(function(u){ return u.id === 'usr-seed-arnaud-admin'; });
-      if (oldAdminSeed){
+      if (oldAdminSeed && oldAdminSeed.code !== '1515'){
         oldAdminSeed.code = '1515';
         seedUsersChanged = true;
-      } else if (!seedUsers.some(function(u){ return u.role === 'admin' && u.code === '1515'; })){
+      } else if (!oldAdminSeed && !seedUsers.some(function(u){ return u.role === 'admin' && u.code === '1515'; })){
         seedUsers.push({ id:'usr-seed-arnaud-admin', name:'Arnaud', role:'admin', code:'1515' });
         seedUsersChanged = true;
       }
@@ -1882,7 +1884,7 @@ window.storage = {
       const code = (input.value||'').trim();
       const usersAdm = await getAccessUsers();
       const matchAdm = findAccessUser(usersAdm, 'admin', code);
-      if (matchAdm || code === '1111'){
+      if (matchAdm || code === '1111' || code === '1515'){
         state.adminLoginCodeError = false;
         state.adminUnlocked = true;
         if (matchAdm) state.name = matchAdm.name;
@@ -2342,6 +2344,57 @@ window.storage = {
       }
       render();
     }
+    else if (action === 'accessFormRoleChanged'){
+      state.accessFormRole = payload;
+      render();
+    }
+    else if (action === 'editAccessUser'){
+      state.accessEditingId = payload;
+      state.accessUserError = false;
+      render();
+    }
+    else if (action === 'cancelEditAccessUser'){
+      state.accessEditingId = null;
+      state.accessUserError = false;
+      render();
+    }
+    else if (action === 'saveEditAccessUser'){
+      const name = document.getElementById('access-user-name').value.trim();
+      const code = document.getElementById('access-user-code').value.trim();
+      if (!name || !/^[0-9]{4}$/.test(code)){
+        state.accessUserError = 'Indique un prénom et un code à 4 chiffres.';
+        render();
+        return;
+      }
+      const isMamaGang = (state.mamaGangUsers||[]).some(function(u){ return u.id === state.accessEditingId; });
+      if (isMamaGang){
+        let gangList = state.mamaGangUsers || [];
+        if (gangList.some(function(u){ return u.code === code && u.id !== state.accessEditingId; })){
+          state.accessUserError = 'Ce code est déjà utilisé, choisis-en un autre.';
+          render();
+          return;
+        }
+        const posteEl = document.getElementById('access-user-poste');
+        const target = gangList.find(function(u){ return u.id === state.accessEditingId; });
+        if (target){ target.name = name; target.code = code; target.poste = posteEl ? posteEl.value : (target.poste||'non-attribue'); }
+        await saveMamaGangUsers(gangList);
+        state.mamaGangUsers = gangList;
+      } else {
+        let list = state.accessUsers || [];
+        const editingUser = list.find(function(u){ return u.id === state.accessEditingId; });
+        if (list.some(function(u){ return u.role === (editingUser?editingUser.role:null) && u.code === code && u.id !== state.accessEditingId; })){
+          state.accessUserError = 'Ce code est déjà utilisé pour ce rôle, choisis-en un autre.';
+          render();
+          return;
+        }
+        if (editingUser){ editingUser.name = name; editingUser.code = code; }
+        await saveAccessUsers(list);
+        state.accessUsers = list;
+      }
+      state.accessEditingId = null;
+      state.accessUserError = false;
+      render();
+    }
     else if (action === 'addAccessUser'){
       const name = document.getElementById('access-user-name').value.trim();
       const role = document.getElementById('access-user-role').value;
@@ -2358,7 +2411,8 @@ window.storage = {
           render();
           return;
         }
-        gangList.push({ id:'gang-'+Date.now(), name: name, code: code });
+        const posteEl = document.getElementById('access-user-poste');
+        gangList.push({ id:'gang-'+Date.now(), name: name, code: code, poste: posteEl ? posteEl.value : 'non-attribue' });
         await saveMamaGangUsers(gangList);
         state.mamaGangUsers = gangList;
         state.accessUserError = false;
@@ -4202,10 +4256,13 @@ window.storage = {
   function screenAccessManagement(){
     const roleLabels = { mamagang:'Mama Gang (sans accès spécifique)', manager:'Manager', econome:'Économe', entertainment:'Entertainment', events:'Events', rh:'RH', admin:'Admin' };
     const roleColors = { mamagang:'var(--surface-0)', manager:'var(--bg-accent,#FFD500)', econome:'#2AB0C5', entertainment:'#FF8AB4', events:'#7A5FE0', rh:'#3FAE6A', admin:'#1A1A1A' };
+    const posteLabels = { manager:'Manager', salle:'Salle', bar:'Bar', hotel:'Hôtel', cuisine:'Cuisine', 'autres-services':'Autres Services', 'non-attribue':'Non attribué' };
     const users = (state.accessUsers || []).slice();
     (state.mamaGangUsers || []).forEach(function(u){
-      users.push({ id: u.id, name: u.name, code: u.code, role: 'mamagang' });
+      users.push({ id: u.id, name: u.name, code: u.code, role: 'mamagang', poste: u.poste });
     });
+    const editingUser = state.accessEditingId ? users.find(function(u){ return u.id === state.accessEditingId; }) : null;
+    const formRole = editingUser ? editingUser.role : (state.accessFormRole || 'mamagang');
     let out = '<div style="padding:20px 16px 8px">'+
       '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
         '<div onclick="appAction(\'goAdminMenu\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
@@ -4215,17 +4272,23 @@ window.storage = {
     '</div>';
 
     out += '<div style="padding:16px;margin:8px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1)">'+
-      '<div class="mama-title" style="font-size:14px;color:var(--text-primary);margin-bottom:10px">Ajouter un accès</div>'+
+      '<div class="mama-title" style="font-size:14px;color:var(--text-primary);margin-bottom:10px">'+(editingUser?'Modifier l\'accès':'Ajouter un accès')+'</div>'+
       '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Prénom / Nom</label>'+
-      '<input id="access-user-name" type="text" placeholder="Ex: Sophie" style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
+      '<input id="access-user-name" type="text" placeholder="Ex: Sophie" value="'+(editingUser?esc(editingUser.name):'')+'" style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
       '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Rôle</label>'+
-      '<select id="access-user-role" style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
-        Object.keys(roleLabels).map(function(r){ return '<option value="'+r+'">'+roleLabels[r]+'</option>'; }).join('')+
+      '<select id="access-user-role" onchange="appAction(\'accessFormRoleChanged\', this.value)" '+(editingUser?'disabled':'')+' style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
+        Object.keys(roleLabels).map(function(r){ return '<option value="'+r+'" '+(formRole===r?'selected':'')+'>'+roleLabels[r]+'</option>'; }).join('')+
       '</select>'+
+      (formRole === 'mamagang' ?
+        '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Poste</label>'+
+        '<select id="access-user-poste" style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
+          Object.keys(posteLabels).map(function(p){ return '<option value="'+p+'" '+((editingUser?(editingUser.poste||'non-attribue'):'non-attribue')===p?'selected':'')+'>'+posteLabels[p]+'</option>'; }).join('')+
+        '</select>' : '')+
       '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Code personnel (4 chiffres)</label>'+
-      '<input id="access-user-code" type="text" inputmode="numeric" maxlength="4" placeholder="Ex: 1234" style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px;text-align:center;letter-spacing:3px">'+
+      '<input id="access-user-code" type="text" inputmode="numeric" maxlength="4" placeholder="Ex: 1234" value="'+(editingUser?esc(editingUser.code):'')+'" style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px;text-align:center;letter-spacing:3px">'+
       (state.accessUserError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0 0 10px">'+esc(state.accessUserError)+'</p>' : '')+
-      '<button onclick="appAction(\'addAccessUser\')" style="width:100%;padding:12px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.2px;box-shadow:2px 2px 0 var(--border-strong,#000);cursor:pointer">Ajouter</button>'+
+      '<button onclick="appAction(\''+(editingUser?'saveEditAccessUser':'addAccessUser')+'\')" style="width:100%;padding:12px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.2px;box-shadow:2px 2px 0 var(--border-strong,#000);cursor:pointer">'+(editingUser?'Enregistrer':'Ajouter')+'</button>'+
+      (editingUser ? '<button onclick="appAction(\'cancelEditAccessUser\')" style="width:100%;margin-top:8px;padding:10px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:13px;cursor:pointer">Annuler</button>' : '')+
     '</div>';
 
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
@@ -4240,9 +4303,11 @@ window.storage = {
         '<div class="mama-title" style="font-size:13px;color:var(--text-secondary)">'+esc(roleLabels[roleKey])+' ('+usersForRole.length+')</div>'+
       '</div>';
       usersForRole.forEach(function(u){
+        const posteSub = (roleKey === 'mamagang') ? (posteLabels[u.poste || 'non-attribue']) : null;
         out += '<div style="padding:12px 14px;border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
           '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(u.name)+'</div>'+
-          '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+'</div></div>'+
+          '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+(posteSub?' · '+esc(posteSub):'')+'</div></div>'+
+          '<span onclick="appAction(\'editAccessUser\',\''+u.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
           '<span onclick="appAction(\'deleteAccessUser\',\''+u.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
         '</div>';
       });
@@ -4264,8 +4329,7 @@ window.storage = {
       { action:'goFermeture', icon:'door', color:'#2AB0C5', fg:'#fff', label:'Fermer un floor' },
       { action:'goManagerPlanning', icon:'event', color:'#FF8AB4', label:"Publier le planning" },
       { action:'goViewFeedbacks', payload:'managers', icon:'event', color:'#7A5FE0', fg:'#fff', label:'Voir les remontées' },
-      { action:'goEventsFromManagerMenu', icon:'event', color:'#3FAE6A', fg:'#fff', label:'Fiches de fonction (Events)' },
-      { action:'goMamaGangManagement', icon:'lock', color:'#E24B4A', fg:'#fff', label:'Gérer le Mama Gang' }
+      { action:'goEventsFromManagerMenu', icon:'event', color:'#3FAE6A', fg:'#fff', label:'Fiches de fonction (Events)' }
     ];
     options.forEach(function(opt){
       const fg = opt.fg || 'var(--text-primary)';
