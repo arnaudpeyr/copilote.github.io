@@ -794,7 +794,7 @@ window.storage = {
               {name:'Lait d\'amande / Lait d\'avoine', isBeurre:false},
               {name:'Jus d\'orange / pamplemousse', isBeurre:false},
               {name:'Jus de pomme', isBeurre:false},
-              {name:'Yaourt', isBeurre:false},
+              {name:'Yaourt', isBeurre:false, noLot:true},
               {name:'Sirop d\'érable', isBeurre:false},
               {name:'Beurre demi-sel', isBeurre:true},
               {name:'Beurre doux', isBeurre:true}
@@ -1257,6 +1257,16 @@ window.storage = {
       const pos = insertIdx2 >= 0 ? insertIdx2+1 : arrieresCat.sublieux.length;
       arrieresCat.sublieux.splice(pos, 0, JSON.parse(JSON.stringify(defaultTraca)));
       await window.storage.set('structure', JSON.stringify(structure), true);
+    }
+    if (arrieresCat){
+      const tracaSub = arrieresCat.sublieux.find(s=>s.id==='tracabilite-matin');
+      if (tracaSub){
+        const yaourt = tracaSub.products.find(p=>p.name==='Yaourt');
+        if (yaourt && !yaourt.noLot){
+          yaourt.noLot = true;
+          await window.storage.set('structure', JSON.stringify(structure), true);
+        }
+      }
     }
     return structure;
   }
@@ -3167,6 +3177,22 @@ window.storage = {
       .replace(/</g, '\\x3C')
       .replace(/"/g, '&quot;');
   }
+  // Insère automatiquement les "/" pendant la saisie d'une date au format JJ/MM/AAAA,
+  // pour permettre de taper directement au clavier sans ouvrir un calendrier.
+  window.formatDateInput = function(el){
+    const cursorWasAtEnd = el.selectionEnd === el.value.length;
+    let digits = el.value.replace(/\D/g, '').slice(0, 8);
+    let formatted = digits;
+    if (digits.length > 4){
+      formatted = digits.slice(0,2) + '/' + digits.slice(2,4) + '/' + digits.slice(4);
+    } else if (digits.length > 2){
+      formatted = digits.slice(0,2) + '/' + digits.slice(2);
+    }
+    el.value = formatted;
+    if (cursorWasAtEnd && el.setSelectionRange){
+      el.setSelectionRange(formatted.length, formatted.length);
+    }
+  };
 
   function bottomNav(active){
     function item(id, label, ic, action){
@@ -3444,16 +3470,17 @@ window.storage = {
       if (product.isBeurre){
         out += '<div style="display:flex;gap:8px">'+
           '<div style="flex:1"><label style="font-size:12px;color:var(--text-secondary);font-weight:600">Fabrication</label>'+
-          '<input id="traca-fab-'+i+'" type="date" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px"></div>'+
+          '<input id="traca-fab-'+i+'" type="text" inputmode="numeric" placeholder="JJ/MM/AAAA" maxlength="10" oninput="formatDateInput(this)" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px"></div>'+
           '<div style="flex:1"><label style="font-size:12px;color:var(--text-secondary);font-weight:600">DDM</label>'+
-          '<input id="traca-ddm-'+i+'" type="date" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px"></div>'+
+          '<input id="traca-ddm-'+i+'" type="text" inputmode="numeric" placeholder="JJ/MM/AAAA" maxlength="10" oninput="formatDateInput(this)" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px"></div>'+
         '</div>';
       } else {
         out += '<div style="display:flex;gap:8px">'+
           '<div style="flex:1"><label style="font-size:12px;color:var(--text-secondary);font-weight:600">DLC</label>'+
-          '<input id="traca-dlc-'+i+'" type="date" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px"></div>'+
+          '<input id="traca-dlc-'+i+'" type="text" inputmode="numeric" placeholder="JJ/MM/AAAA" maxlength="10" oninput="formatDateInput(this)" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px"></div>'+
+          (product.noLot ? '' :
           '<div style="flex:1"><label style="font-size:12px;color:var(--text-secondary);font-weight:600">N° de lot</label>'+
-          '<input id="traca-lot-'+i+'" type="text" placeholder="Ex: L2384" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px"></div>'+
+          '<input id="traca-lot-'+i+'" type="text" placeholder="Ex: L2384" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:13px"></div>')+
         '</div>';
       }
       out += '</div>';
@@ -4119,7 +4146,7 @@ window.storage = {
   function screenMamaGangManagement(){
     const users = state.mamaGangUsers || [];
     const editing = state.mamaGangEditingId ? users.find(function(u){ return u.id === state.mamaGangEditingId; }) : null;
-    const posteLabels = { bar:'Bar', salle:'Salle', cuisine:'Cuisine', ateliers:'Ateliers', 'non-attribue':'Non attribué' };
+    const posteLabels = { manager:'Manager', salle:'Salle', bar:'Bar', hotel:'Hôtel', cuisine:'Cuisine', 'autres-services':'Autres Services', 'non-attribue':'Non attribué' };
     let out = '<div style="padding:20px 16px 8px">'+
       '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
         '<div onclick="appAction(\'goManagerMenu\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
