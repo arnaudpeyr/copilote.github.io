@@ -35,6 +35,11 @@
 }
 .mama-title{ text-transform:uppercase; font-weight:800; letter-spacing:0.3px; }
 .copilote-script{ font-family:'Sacramento',cursive; font-size:38px; color:var(--text-primary); line-height:1; display:block; margin-bottom:10px; }
+@keyframes letterWrite{
+  0%{ opacity:0; transform:translateY(4px) rotate(-6deg); }
+  100%{ opacity:1; transform:translateY(0) rotate(0deg); }
+}
+.script-letter{ display:inline-block; opacity:0; animation:letterWrite 0.35s ease-out forwards; }
 @keyframes pulseAlert{
   0%{ box-shadow:3px 3px 0 var(--border-strong,#000), 0 0 0 0 rgba(232,67,43,0.6); }
   70%{ box-shadow:3px 3px 0 var(--border-strong,#000), 0 0 0 10px rgba(232,67,43,0); }
@@ -1738,7 +1743,7 @@ window.storage = {
       render();
     }
     else if (action === 'backToChoice'){
-      state.screen = 'other-access-menu'; render();
+      state.loginStep = 'simple'; state.screen = 'login'; render();
     }
     else if (action === 'goOtherAccessMenu'){
       state.screen = 'other-access-menu'; render();
@@ -1785,7 +1790,10 @@ window.storage = {
         state.screen = 'manager-menu';
       } else if (code === '6666'){
         state.managerLoginCodeError = false;
-        state.loginStep = 'manager-name';
+        state.name = 'Manager';
+        state.managerUnlocked = true;
+        state.feedbackCounts = await feedbackPromise;
+        state.screen = 'manager-menu';
       } else {
         state.managerLoginCodeError = true;
       }
@@ -3266,26 +3274,48 @@ window.storage = {
     let items = item('home','Accueil','home','goHome');
     if (state.managerUnlocked){
       items += item('menu','Menu','settings','goManagerMenu');
-    } else {
-      items += item('other','Autre Accès','settings','goOtherAccessMenu');
     }
     return '<div style="display:flex;border-top:1px solid var(--border);margin-top:12px">'+items+'</div>';
   }
 
 
   function screenLoginSimple(){
-    return '<div style="padding:40px 20px;text-align:center">'+
-      '<div style="margin-bottom:28px">'+
-        '<div class="copilote-script">Copilote</div>'+
-        '<img src="'+LOGO_URI+'" alt="Mama Shelter Toulouse" style="width:90px;height:90px;object-fit:contain;display:block;margin:0 auto">'+
+    const word = 'Copilote';
+    const letters = word.split('').map(function(ch, i){
+      return '<span class="script-letter" style="animation-delay:'+(i*0.09)+'s">'+ch+'</span>';
+    }).join('');
+    const quickRoles = [
+      {action:'chooseManager', label:'Manager', color:'var(--bg-accent,#FFD500)', fg:'#1A1A1A', icon:'settings'},
+      {action:'chooseEconome', label:'Économe', color:'#2AB0C5', fg:'#fff', icon:'archive'},
+      {action:'chooseEntertainment', label:'Enter.', color:'#FF8AB4', fg:'#1A1A1A', icon:'event'},
+      {action:'chooseEvents', label:'Events', color:'#7A5FE0', fg:'#fff', icon:'event'},
+      {action:'chooseRH', label:'RH', color:'#3FAE6A', fg:'#fff', icon:'event'},
+      {action:'chooseAdmin', label:'Admin', color:'#1A1A1A', fg:'#fff', icon:'lock'}
+    ];
+    const quickRolesHtml = quickRoles.map(function(r){
+      return '<div onclick="appAction(\''+r.action+'\')" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">'+
+        '<div style="width:44px;height:44px;border-radius:50%;background:'+r.color+';color:'+r.fg+';border:2px solid var(--border-strong,#000);display:flex;align-items:center;justify-content:center">'+icon(r.icon,20)+'</div>'+
+        '<span style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.2px">'+r.label+'</span>'+
+      '</div>';
+    }).join('');
+    return '<div style="padding:48px 20px 32px;text-align:center">'+
+      '<div style="width:132px;height:132px;margin:0 auto;border-radius:50%;border:3px dashed rgba(232,67,43,0.35);display:flex;align-items:center;justify-content:center">'+
+        '<div style="width:104px;height:104px;border-radius:50%;background:#fff;border:3px solid var(--border-strong,#000);display:flex;align-items:center;justify-content:center;box-shadow:4px 4px 0 var(--border-strong,#000);overflow:hidden">'+
+          '<img src="'+LOGO_URI+'" alt="Mama Shelter Toulouse" style="width:100%;height:100%;object-fit:cover">'+
+        '</div>'+
       '</div>'+
-      '<h1 class="mama-title" style="font-size:20px;font-weight:800;margin:0 0 4px">Accès Mama Gang</h1>'+
-      '<p style="color:var(--text-secondary);margin:0 0 24px;font-size:14px">Indique ton prénom et ton code personnel</p>'+
-      '<div style="max-width:280px;margin:0 auto;text-align:left">'+
-        '<input id="login-name" type="text" placeholder="Ex: Arnaud" style="width:100%;box-sizing:border-box;padding:12px;margin:0 0 12px;border-radius:8px;border:1px solid '+(state.simpleLoginError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-1);color:var(--text-primary);font-size:15px;text-align:center">'+
-        '<input id="login-code" type="password" inputmode="numeric" maxlength="4" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;margin:0 0 12px;border-radius:8px;border:1px solid '+(state.simpleLoginError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-1);color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
-        (state.simpleLoginError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0 0 12px">'+esc(state.simpleLoginError)+'</p>' : '')+
-        '<button onclick="appAction(\'loginSimple\')" style="width:100%;padding:14px;border-radius:8px;border:2.5px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Continuer</button>'+
+      '<div class="copilote-script" style="font-size:44px;margin-top:10px;line-height:1">'+letters+'</div>'+
+      '<div style="font-size:12px;color:var(--text-muted);letter-spacing:2.5px;text-transform:uppercase;margin-top:-2px;font-weight:600">Mama Shelter Toulouse</div>'+
+      '<div style="max-width:300px;margin:28px auto 0;padding:24px 22px;background:#1E5FA8;border:2.5px solid var(--border-strong,#000);border-radius:18px;box-shadow:5px 5px 0 var(--border-strong,#000);text-align:left;transform:rotate(-0.4deg)">'+
+        '<h1 class="mama-title" style="font-size:17px;font-weight:800;margin:0 0 4px;text-align:center;color:#fff">Accès Mama Gang</h1>'+
+        '<p style="color:rgba(255,255,255,0.85);margin:0 0 18px;font-size:13px;text-align:center">Indique ton prénom et ton code personnel</p>'+
+        '<input id="login-name" type="text" placeholder="Ex: Arnaud" style="width:100%;box-sizing:border-box;padding:12px;margin:0 0 12px;border-radius:10px;border:1.5px solid '+(state.simpleLoginError?'var(--border-danger,#E24B4A)':'transparent')+';background:#fff;color:var(--text-primary);font-size:15px;text-align:center">'+
+        '<input id="login-code" type="password" inputmode="numeric" maxlength="4" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;margin:0 0 12px;border-radius:10px;border:1.5px solid '+(state.simpleLoginError?'var(--border-danger,#E24B4A)':'transparent')+';background:#fff;color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
+        (state.simpleLoginError ? '<p style="color:#FFD9D9;font-size:13px;margin:0 0 12px;text-align:center">'+esc(state.simpleLoginError)+'</p>' : '')+
+        '<button onclick="appAction(\'loginSimple\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#FF6FA5;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Continuer</button>'+
+      '</div>'+
+      '<div style="max-width:320px;margin:22px auto 0;display:flex;justify-content:space-between;gap:6px">'+
+        quickRolesHtml+
       '</div>'+
     '</div>';
   }
