@@ -274,7 +274,7 @@ window.storage = {
               {id:'nq-21', label:'Nettoyer les télés', obligatoire:true}
           ]},
           { id:'releve-temperatures', name:'Relevé de température', icon:'thermometer', type:'temperatures', fridges:[
-              'VINS ENVOI','MEP 1-2-3','FRIGO À LIQUEUR','FRIGO 3','FRIGO 2','FRIGO 1','FRIGO "ORANGINA"','EUROCAVE HAUTE','EUROCAVE BASSE'
+              'Frigo 1 (bières / soft)','Frigo Liqueurs','Frigo MEP (shooters)','Frigo 2 (bières / soft)','Frigo PET / Premix','Frigo Vin / Eaux','Frigo Terrasse','Eurocave Haut','Eurocave Bas'
           ]},
           { id:'suivi-pertes', name:'Suivi des pertes', icon:'loss', type:'pertes', tasks:[] },
           { id:'nettoyage-hebdo', name:'Nettoyage hebdo', icon:'glass', type:'checklist', tasks:[
@@ -1072,6 +1072,11 @@ window.storage = {
       await window.storage.set('structure', JSON.stringify(structure), true);
     }
     if (bar){
+      const releveTemp = bar.sublieux.find(s=>s.id==='releve-temperatures');
+      if (releveTemp && releveTemp.fridges.indexOf('Frigo Terrasse') === -1){
+        releveTemp.fridges = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='bar').sublieux.find(s=>s.id==='releve-temperatures').fridges));
+        await window.storage.set('structure', JSON.stringify(structure), true);
+      }
       const nettoyageQuotidien = bar.sublieux.find(s=>s.id==='nettoyage-quotidien');
       if (nettoyageQuotidien && !nettoyageQuotidien.tasks.some(t=>t.id==='nq-1')){
         nettoyageQuotidien.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='bar').sublieux.find(s=>s.id==='nettoyage-quotidien').tasks));
