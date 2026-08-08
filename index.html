@@ -91,6 +91,12 @@ window.storage = {
 // ===== Fin de l'adaptateur Supabase =====
 
 (function(){
+  const DEFAULT_PROCESS_INFOS = [
+    { id:'proc-1', title:'Accident de travail', content:'' },
+    { id:'proc-2', title:'Mise en place du petit déjeuner', content:'' },
+    { id:'proc-3', title:'Procédure de remboursement', content:'' },
+    { id:'proc-4', title:'Les PM fixes', content:'' }
+  ];
   const DEFAULT_STRUCTURE = {
     categories: [
       { id:'ateliers', name:'Les ateliers', icon:'grid', sublieux: [
@@ -1002,6 +1008,10 @@ window.storage = {
     planningSaveError: false,
     feedbackSent: false,
     feedbackError: false,
+    remonteeRecipient: null,
+    remonteeLocation: null,
+    remonteeLocationManual: false,
+    remonteePhoto: null,
     viewFeedbacksCategory: null,
     feedbacksList: [],
     feedbackCounts: { managers:0, econome:0, events:0, entertainment:0, rh:0 },
@@ -1014,6 +1024,11 @@ window.storage = {
     mamaGangEditingId: null,
     simpleLoginError: false,
     rhLoginCodeError: false,
+    techniqueUnlocked: false,
+    techniqueLoginCodeError: false,
+    processInfos: [],
+    processInfoEditingId: null,
+    processInfoViewingId: null,
     rhUnlocked: false,
     rhEditingId: null,
     rhSaveError: false,
@@ -1514,6 +1529,17 @@ window.storage = {
       return [];
     }
   }
+  async function getProcessInfos(){
+    try {
+      const res = await window.storage.get('processInfos', true);
+      return JSON.parse(res.value);
+    } catch(e){
+      return JSON.parse(JSON.stringify(DEFAULT_PROCESS_INFOS));
+    }
+  }
+  async function saveProcessInfos(list){
+    await window.storage.set('processInfos', JSON.stringify(list), true);
+  }
   async function saveMamaGangUsers(list){
     await window.storage.set('mamaGangUsers', JSON.stringify(list), true);
   }
@@ -1541,7 +1567,7 @@ window.storage = {
   }
   async function computeFeedbackCounts(){
     const list = await getFeedbacks();
-    const counts = { managers:0, econome:0, events:0, entertainment:0, rh:0 };
+    const counts = { managers:0, econome:0, events:0, entertainment:0, rh:0, technique:0 };
     list.forEach(function(f){
       (f.recipients||[]).forEach(function(r){
         if (counts[r] !== undefined && (!f.readBy || !f.readBy[r])) counts[r]++;
@@ -1735,6 +1761,9 @@ window.storage = {
     else if (action === 'chooseRH'){
       state.loginStep = 'rh-code'; state.rhLoginCodeError = false; state.screen = 'login'; render();
     }
+    else if (action === 'chooseTechnique'){
+      state.loginStep = 'technique-code'; state.techniqueLoginCodeError = false; state.screen = 'login'; render();
+    }
     else if (action === 'chooseAdmin'){
       state.loginStep = 'admin-code'; state.adminLoginCodeError = false; state.screen = 'login'; render();
     }
@@ -1884,6 +1913,33 @@ window.storage = {
         state.screen = 'rh-list';
       } else {
         state.rhLoginCodeError = true;
+      }
+      render();
+    }
+    else if (action === 'submitTechniqueLoginCode'){
+      const input = document.getElementById('technique-login-code');
+      const code = (input.value||'').trim();
+      const usersTech = await getAccessUsers();
+      const matchTech = findAccessUser(usersTech, 'technique', code);
+      if (matchTech || code === '4444'){
+        state.techniqueLoginCodeError = false;
+        state.techniqueUnlocked = true;
+        if (matchTech) state.name = matchTech.name;
+        state.viewFeedbacksCategory = 'technique';
+        const list = await getFeedbacks();
+        state.feedbacksList = list;
+        let changed = false;
+        list.forEach(function(f){
+          if ((f.recipients||[]).indexOf('technique') >= 0){
+            f.readBy = f.readBy || {};
+            if (!f.readBy.technique){ f.readBy.technique = true; changed = true; }
+          }
+        });
+        if (changed){ await saveFeedbacks(list); }
+        state.feedbackCounts = await computeFeedbackCounts();
+        state.screen = 'view-feedbacks';
+      } else {
+        state.techniqueLoginCodeError = true;
       }
       render();
     }
@@ -2102,7 +2158,7 @@ window.storage = {
       }
     }
     else if (action === 'logout'){
-      state.name=''; state.managerUnlocked=false; state.economeUnlocked=false; state.entertainmentUnlocked=false; state.eventsUnlocked=false; state.rhUnlocked=false; state.adminUnlocked=false; state.cameFromManagerMenu=false; state.loginStep='simple'; state.screen='login'; render();
+      state.name=''; state.managerUnlocked=false; state.economeUnlocked=false; state.entertainmentUnlocked=false; state.eventsUnlocked=false; state.rhUnlocked=false; state.adminUnlocked=false; state.techniqueUnlocked=false; state.cameFromManagerMenu=false; state.loginStep='simple'; state.screen='login'; render();
     }
     else if (action === 'goHome'){
       const [structure, events, eventSheets, rhEvents] = await Promise.all([
@@ -2606,26 +2662,73 @@ window.storage = {
     else if (action === 'goRemontees'){
       state.feedbackSent = false;
       state.feedbackError = false;
-      state.screen = 'remontees';
+      state.remonteeRecipient = null;
+      state.remonteeLocation = null;
+      state.remonteeLocationManual = false;
+      state.remonteePhoto = null;
+      state.screen = 'remontees-choose';
+      render();
+    }
+    else if (action === 'chooseRemonteeRecipient'){
+      state.remonteeRecipient = payload;
+      state.feedbackError = false;
+      state.screen = 'remontees-form';
+      render();
+    }
+    else if (action === 'backToRemonteeChoice'){
+      state.remonteeRecipient = null;
+      state.screen = 'remontees-choose';
+      render();
+    }
+    else if (action === 'selectRemonteeLocation'){
+      if (payload === 'autres'){
+        state.remonteeLocationManual = true;
+        state.remonteeLocation = '';
+      } else {
+        state.remonteeLocationManual = false;
+        state.remonteeLocation = payload;
+      }
+      render();
+    }
+    else if (action === 'captureRemonteePhoto'){
+      const fileInput = document.getElementById('remontee-photo-input');
+      if (fileInput && fileInput.files && fileInput.files[0]){
+        const file = fileInput.files[0];
+        try {
+          const dataUrl = await new Promise(function(resolve, reject){
+            const reader = new FileReader();
+            reader.onload = function(){ resolve(reader.result); };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+          state.remonteePhoto = dataUrl;
+        } catch(e){}
+      }
+      render();
+    }
+    else if (action === 'removeRemonteePhoto'){
+      state.remonteePhoto = null;
       render();
     }
     else if (action === 'submitFeedback'){
       const message = document.getElementById('feedback-message').value.trim();
-      const recipientKeys = ['managers','econome','events','entertainment','rh'];
-      const recipients = recipientKeys.filter(function(k){
-        const el = document.getElementById('feedback-recipient-'+k);
-        return el && el.checked;
-      });
-      if (!message || recipients.length === 0){
+      const recipient = state.remonteeRecipient;
+      const location = state.remonteeLocationManual
+        ? document.getElementById('remontee-location-manual').value.trim()
+        : (state.remonteeLocation || '');
+      if (!message || !recipient){
         state.feedbackError = true;
         render();
         return;
       }
       const list = await getFeedbacks();
+      const recipientsList = recipient === 'managers' ? ['managers'] : [recipient, 'managers'];
       list.unshift({
         id: 'fb-'+Date.now(),
         message: message,
-        recipients: recipients,
+        recipients: recipientsList,
+        location: location,
+        photo: (recipient === 'technique') ? (state.remonteePhoto || null) : null,
         author: state.name,
         when: nowLabel()
       });
@@ -2658,6 +2761,9 @@ window.storage = {
       else if (state.viewFeedbacksCategory === 'events') state.screen = 'events-list';
       else if (state.viewFeedbacksCategory === 'entertainment') state.screen = 'entertainment-list';
       else if (state.viewFeedbacksCategory === 'rh') state.screen = 'rh-list';
+      else if (state.viewFeedbacksCategory === 'technique'){
+        state.name=''; state.techniqueUnlocked=false; state.loginStep='simple'; state.screen='login';
+      }
       render();
     }
     else if (action === 'deleteFeedbackForRole'){
@@ -2673,6 +2779,71 @@ window.storage = {
       await saveFeedbacks(list);
       state.feedbacksList = list;
       state.feedbackCounts = await computeFeedbackCounts();
+      render();
+    }
+    else if (action === 'goProcessInfosRead'){
+      state.processInfos = await getProcessInfos();
+      state.processInfoViewingId = null;
+      state.screen = 'process-infos-read';
+      render();
+    }
+    else if (action === 'viewProcessInfo'){
+      state.processInfoViewingId = payload;
+      render();
+    }
+    else if (action === 'backToProcessInfosReadList'){
+      state.processInfoViewingId = null;
+      render();
+    }
+    else if (action === 'goProcessInfosAdmin'){
+      if (state.adminUnlocked){
+        state.processInfos = await getProcessInfos();
+        state.processInfoEditingId = null;
+        state.screen = 'process-infos';
+      } else {
+        state.lockedFor = 'admin-access';
+        state.screen = 'manager-locked';
+      }
+      render();
+    }
+    else if (action === 'goProcessInfos'){
+      state.processInfos = await getProcessInfos();
+      state.processInfoEditingId = null;
+      state.screen = 'process-infos';
+      render();
+    }
+    else if (action === 'editProcessInfo'){
+      state.processInfoEditingId = payload;
+      render();
+    }
+    else if (action === 'backToProcessInfosList'){
+      state.processInfoEditingId = null;
+      render();
+    }
+    else if (action === 'saveProcessInfo'){
+      const title = document.getElementById('process-info-title').value.trim();
+      const content = document.getElementById('process-info-content').value;
+      if (!title){ render(); return; }
+      const target = state.processInfos.find(function(p){ return p.id === state.processInfoEditingId; });
+      if (target){ target.title = title; target.content = content; }
+      await saveProcessInfos(state.processInfos);
+      state.processInfoEditingId = null;
+      render();
+    }
+    else if (action === 'addProcessInfo'){
+      const input = document.getElementById('new-process-info-title');
+      const title = (input.value||'').trim();
+      if (!title){ render(); return; }
+      const list = state.processInfos || [];
+      list.push({ id:'proc-'+Date.now(), title: title, content:'' });
+      await saveProcessInfos(list);
+      state.processInfos = list;
+      render();
+    }
+    else if (action === 'deleteProcessInfo'){
+      const list = (state.processInfos||[]).filter(function(p){ return p.id !== payload; });
+      await saveProcessInfos(list);
+      state.processInfos = list;
       render();
     }
     else if (action === 'adminReqOpenEditor'){
@@ -3290,10 +3461,11 @@ window.storage = {
       {action:'chooseEntertainment', label:'Enter.', color:'#FF8AB4', fg:'#1A1A1A', icon:'event'},
       {action:'chooseEvents', label:'Events', color:'#7A5FE0', fg:'#fff', icon:'event'},
       {action:'chooseRH', label:'RH', color:'#3FAE6A', fg:'#fff', icon:'event'},
+      {action:'chooseTechnique', label:'Techn.', color:'#FF9F43', fg:'#fff', icon:'settings'},
       {action:'chooseAdmin', label:'Admin', color:'#1A1A1A', fg:'#fff', icon:'lock'}
     ];
     const quickRolesHtml = quickRoles.map(function(r){
-      return '<div onclick="appAction(\''+r.action+'\')" style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">'+
+      return '<div onclick="appAction(\''+r.action+'\')" style="flex:0 0 60px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">'+
         '<div style="width:44px;height:44px;border-radius:50%;background:'+r.color+';color:'+r.fg+';border:2px solid var(--border-strong,#000);display:flex;align-items:center;justify-content:center">'+icon(r.icon,20)+'</div>'+
         '<span style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.2px">'+r.label+'</span>'+
       '</div>';
@@ -3314,7 +3486,7 @@ window.storage = {
         (state.simpleLoginError ? '<p style="color:#FFD9D9;font-size:13px;margin:0 0 12px;text-align:center">'+esc(state.simpleLoginError)+'</p>' : '')+
         '<button onclick="appAction(\'loginSimple\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#FF6FA5;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Continuer</button>'+
       '</div>'+
-      '<div style="max-width:320px;margin:22px auto 0;display:flex;justify-content:space-between;gap:6px">'+
+      '<div style="max-width:300px;margin:22px auto 0;display:flex;flex-wrap:wrap;justify-content:center;gap:16px 14px">'+
         quickRolesHtml+
       '</div>'+
     '</div>';
@@ -3391,6 +3563,19 @@ window.storage = {
         '<input id="rh-login-code" type="password" inputmode="numeric" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid '+(state.rhLoginCodeError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-1);color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
         (state.rhLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">Code incorrect.</p>' : '')+
         '<button onclick="appAction(\'submitRhLoginCode\')" style="width:100%;margin-top:16px;padding:14px;border-radius:8px;border:2.5px solid var(--border-strong,#000);background:#3FAE6A;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Valider</button>'+
+        '<button onclick="appAction(\'backToChoice\')" style="width:100%;margin-top:10px;padding:12px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:14px;cursor:pointer">Retour</button>'+
+      '</div>'+
+    '</div>';
+  }
+
+  function screenLoginTechniqueCode(){
+    return '<div style="padding:40px 20px;text-align:center">'+
+      '<h1 class="mama-title" style="font-size:20px;font-weight:800;margin:0 0 4px">Accès Technique</h1>'+
+      '<p style="color:var(--text-secondary);margin:0 0 24px;font-size:14px">Entre le code Technique</p>'+
+      '<div style="max-width:260px;margin:0 auto;text-align:left">'+
+        '<input id="technique-login-code" type="password" inputmode="numeric" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid '+(state.techniqueLoginCodeError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-1);color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
+        (state.techniqueLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">Code incorrect.</p>' : '')+
+        '<button onclick="appAction(\'submitTechniqueLoginCode\')" style="width:100%;margin-top:16px;padding:14px;border-radius:8px;border:2.5px solid var(--border-strong,#000);background:#FF9F43;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Valider</button>'+
         '<button onclick="appAction(\'backToChoice\')" style="width:100%;margin-top:10px;padding:12px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:14px;cursor:pointer">Retour</button>'+
       '</div>'+
     '</div>';
@@ -4230,6 +4415,10 @@ window.storage = {
       '<div style="width:42px;height:42px;flex-shrink:0;border-radius:10px;border:2px solid var(--border-strong,#000);background:#fff;color:#E24B4A;display:flex;align-items:center;justify-content:center">'+icon('lock',22)+'</div>'+
       '<div class="mama-title" style="font-size:15px;color:#fff">Gérer les accès (Manager, Économe, Entertainment, Events, RH)</div>'+
     '</button>';
+    out += '<button onclick="appAction(\'goProcessInfosAdmin\')" style="display:flex;align-items:center;gap:14px;padding:18px;border-radius:14px;border:2.5px solid var(--border-strong,#000);background:#7A5FE0;color:#fff;cursor:pointer;text-align:left;box-shadow:4px 4px 0 var(--border-strong,#000)">'+
+      '<div style="width:42px;height:42px;flex-shrink:0;border-radius:10px;border:2px solid var(--border-strong,#000);background:#fff;color:#7A5FE0;display:flex;align-items:center;justify-content:center">'+icon('edit',22)+'</div>'+
+      '<div class="mama-title" style="font-size:15px;color:#fff">Modifier une fiche (Process & Infos)</div>'+
+    '</button>';
     out += '</div>';
     out += '<div style="padding:8px 16px"><button onclick="appAction(\'logout\')" style="width:100%;padding:12px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:14px;cursor:pointer">Se déconnecter</button></div>';
     return out;
@@ -4284,8 +4473,8 @@ window.storage = {
   }
 
   function screenAccessManagement(){
-    const roleLabels = { mamagang:'Mama Gang (sans accès spécifique)', manager:'Manager', econome:'Économe', entertainment:'Entertainment', events:'Events', rh:'RH', admin:'Admin' };
-    const roleColors = { mamagang:'var(--surface-0)', manager:'var(--bg-accent,#FFD500)', econome:'#2AB0C5', entertainment:'#FF8AB4', events:'#7A5FE0', rh:'#3FAE6A', admin:'#1A1A1A' };
+    const roleLabels = { mamagang:'Mama Gang (sans accès spécifique)', manager:'Manager', econome:'Économe', entertainment:'Entertainment', events:'Events', rh:'RH', technique:'Technique', admin:'Admin' };
+    const roleColors = { mamagang:'var(--surface-0)', manager:'var(--bg-accent,#FFD500)', econome:'#2AB0C5', entertainment:'#FF8AB4', events:'#7A5FE0', rh:'#3FAE6A', technique:'#FF9F43', admin:'#1A1A1A' };
     const posteLabels = { manager:'Manager', salle:'Salle', bar:'Bar', hotel:'Hôtel', cuisine:'Cuisine', 'autres-services':'Autres Services', 'non-attribue':'Non attribué' };
     const users = (state.accessUsers || []).slice();
     (state.mamaGangUsers || []).forEach(function(u){
@@ -4347,9 +4536,10 @@ window.storage = {
     '</div>';
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:12px">';
     const options = [
+      { action:'goProcessInfosRead', icon:'edit', color:'#7A5FE0', fg:'#fff', label:'Process & Infos' },
+      { action:'goFermeture', icon:'door', color:'#2AB0C5', fg:'#fff', label:'Fermer un floor' },
       { action:'goAdmin', icon:'settings', color:'#FFD500', label:'Modifier une checklist' },
       { action:'goHistorique', icon:'clock', color:'#E8432B', fg:'#fff', label:"Voir l'historique des rapports" },
-      { action:'goFermeture', icon:'door', color:'#2AB0C5', fg:'#fff', label:'Fermer un floor' },
       { action:'goManagerPlanning', icon:'event', color:'#FF8AB4', label:"Publier le planning" },
       { action:'goViewFeedbacks', payload:'managers', icon:'event', color:'#7A5FE0', fg:'#fff', label:'Voir les remontées' },
       { action:'goEventsFromManagerMenu', icon:'event', color:'#3FAE6A', fg:'#fff', label:'Fiches de fonction (Events)' }
@@ -4424,20 +4614,51 @@ window.storage = {
   function screenManagerPlanning(){ return renderPlanningScreen(false); }
   function screenPlanningView(){ return renderPlanningScreen(true); }
 
-  function screenRemontees(){
+  function screenRemonteesChooseRecipient(){
     const recipients = [
       {key:'managers', label:'Managers', color:'#FFD500', fg:'#1A1A1A'},
       {key:'econome', label:'Économe', color:'#2AB0C5', fg:'#fff'},
       {key:'events', label:'Events', color:'#7A5FE0', fg:'#fff'},
       {key:'entertainment', label:'Entertainment', color:'#FF8AB4', fg:'#1A1A1A'},
-      {key:'rh', label:'RH', color:'#3FAE6A', fg:'#fff'}
+      {key:'rh', label:'RH', color:'#3FAE6A', fg:'#fff'},
+      {key:'technique', label:'Technique', color:'#FF9F43', fg:'#fff'}
     ];
     let out = '<div style="padding:20px 16px 8px">'+
       '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
         '<div onclick="appAction(\'goHome\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
         '<div style="flex:1"><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">L\'ascenseur</h1>'+
-        '<p style="font-size:13px;color:var(--text-secondary);margin:2px 0 0">Une info ? Une idée ? Un problème ?</p></div>'+
+        '<p style="font-size:13px;color:var(--text-secondary);margin:2px 0 0">À qui veux-tu écrire ?</p></div>'+
         icon('edit',22)+
+      '</div>'+
+    '</div>';
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    recipients.forEach(function(r){
+      out += '<div onclick="appAction(\'chooseRemonteeRecipient\',\''+r.key+'\')" style="display:flex;align-items:center;gap:12px;padding:16px;border:2.5px solid var(--border-strong,#000);border-radius:14px;background:'+r.color+';color:'+r.fg+';cursor:pointer;box-shadow:4px 4px 0 var(--border-strong,#000)">'+
+        '<div style="flex:1;font-size:15px;font-weight:800">'+r.label+'</div>'+
+        icon('chevronRight',18)+
+      '</div>';
+    });
+    out += '</div>';
+    out += bottomNav('home');
+    return out;
+  }
+
+  function screenRemonteesForm(){
+    const recipients = {
+      managers:{label:'Managers', color:'#FFD500', fg:'#1A1A1A'},
+      econome:{label:'Économe', color:'#2AB0C5', fg:'#fff'},
+      events:{label:'Events', color:'#7A5FE0', fg:'#fff'},
+      entertainment:{label:'Entertainment', color:'#FF8AB4', fg:'#1A1A1A'},
+      rh:{label:'RH', color:'#3FAE6A', fg:'#fff'},
+      technique:{label:'Technique', color:'#FF9F43', fg:'#fff'}
+    };
+    const r = recipients[state.remonteeRecipient] || {label:'', color:'#ccc', fg:'#000'};
+    const locations = ['Restaurant','Rooftop','Bar','Cuisine'];
+    let out = '<div style="padding:20px 16px 8px">'+
+      '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+        '<div onclick="appAction(\'backToRemonteeChoice\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<div style="flex:1"><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">L\'ascenseur</h1>'+
+        '<div style="display:inline-block;margin-top:4px;padding:3px 10px;border-radius:999px;background:'+r.color+';color:'+r.fg+';font-size:12px;font-weight:800">'+esc(r.label)+'</div></div>'+
       '</div>'+
     '</div>';
 
@@ -4448,18 +4669,40 @@ window.storage = {
 
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:14px">';
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Ton message</label>'+
-      '<textarea id="feedback-message" placeholder="Ex: il manque du matériel en salle, un client a signalé..." style="width:100%;box-sizing:border-box;min-height:100px;padding:12px;margin-top:6px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px;font-family:inherit;resize:vertical"></textarea></div>';
-    out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Info pour qui ?</label>'+
-      '<div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">';
-    recipients.forEach(function(r){
-      out += '<label style="display:flex;align-items:center;gap:10px;padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);cursor:pointer">'+
-        '<input type="checkbox" id="feedback-recipient-'+r.key+'" style="width:18px;height:18px">'+
-        '<span style="font-size:14px;font-weight:600;color:var(--text-primary)">'+r.label+'</span>'+
-      '</label>';
+      '<textarea id="feedback-message" placeholder="'+(state.remonteeRecipient==='technique' ? 'Ex: (tel élément cassé, fuite, problème électrique...)' : 'Ex: il manque du matériel en salle, un client a signalé...')+'" style="width:100%;box-sizing:border-box;min-height:100px;padding:12px;margin-top:6px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px;font-family:inherit;resize:vertical"></textarea></div>';
+
+    out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Localisation</label>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
+    locations.forEach(function(loc){
+      const active = !state.remonteeLocationManual && state.remonteeLocation === loc;
+      out += '<div onclick="appAction(\'selectRemonteeLocation\',\''+loc+'\')" style="padding:8px 14px;border-radius:999px;border:1.5px solid '+(active?'var(--text-accent,#185FA5)':'var(--border)')+';background:'+(active?'var(--text-accent,#185FA5)':'var(--surface-1)')+';color:'+(active?'#fff':'var(--text-secondary)')+';font-size:13px;font-weight:700;cursor:pointer">'+esc(loc)+'</div>';
     });
-    out += '</div></div>';
+    const autresActive = state.remonteeLocationManual;
+    out += '<div onclick="appAction(\'selectRemonteeLocation\',\'autres\')" style="padding:8px 14px;border-radius:999px;border:1.5px solid '+(autresActive?'var(--text-accent,#185FA5)':'var(--border)')+';background:'+(autresActive?'var(--text-accent,#185FA5)':'var(--surface-1)')+';color:'+(autresActive?'#fff':'var(--text-secondary)')+';font-size:13px;font-weight:700;cursor:pointer">Autres</div>';
+    out += '</div>';
+    if (state.remonteeLocationManual){
+      out += '<input id="remontee-location-manual" type="text" placeholder="Précise l\'endroit" style="width:100%;box-sizing:border-box;padding:10px;margin-top:8px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px">';
+    }
+    out += '</div>';
+
+    if (state.remonteeRecipient === 'technique'){
+      out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Photo (optionnel)</label>';
+      if (state.remonteePhoto){
+        out += '<div style="margin-top:8px;position:relative;display:inline-block">'+
+          '<img src="'+state.remonteePhoto+'" style="max-width:100%;border-radius:10px;border:2px solid var(--border-strong,var(--border));display:block">'+
+          '<div onclick="appAction(\'removeRemonteePhoto\')" style="position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,0.6);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer">'+icon('close',16)+'</div>'+
+        '</div>';
+      } else {
+        out += '<label style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px;padding:14px;border:2px dashed var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);cursor:pointer;color:var(--text-secondary);font-size:14px;font-weight:600">'+
+          icon('event',18)+'<span>Prendre une photo</span>'+
+          '<input id="remontee-photo-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="appAction(\'captureRemonteePhoto\')">'+
+        '</label>';
+      }
+      out += '</div>';
+    }
+
     if (state.feedbackError){
-      out += '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0">Écris un message et choisis au moins un destinataire.</p>';
+      out += '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0">Écris un message avant d\'envoyer.</p>';
     }
     out += '<button onclick="appAction(\'submitFeedback\')" style="width:100%;padding:16px;border-radius:10px;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;border:2.5px solid var(--border-strong,#000);box-shadow:3px 3px 0 var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff">Envoyer</button>';
     out += '</div>';
@@ -4469,7 +4712,7 @@ window.storage = {
   }
 
   function screenViewFeedbacks(){
-    const catLabels = {managers:'Managers', econome:'Économe', events:'Events', entertainment:'Entertainment', rh:'RH'};
+    const catLabels = {managers:'Managers', econome:'Économe', events:'Events', entertainment:'Entertainment', rh:'RH', technique:'Technique'};
     const label = catLabels[state.viewFeedbacksCategory] || '';
     const list = (state.feedbacksList||[]).filter(function(f){ return f.recipients.indexOf(state.viewFeedbacksCategory) >= 0; });
     let out = '<div style="padding:20px 16px 8px">'+
@@ -4486,7 +4729,9 @@ window.storage = {
     list.forEach(function(f){
       out += '<div style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;align-items:flex-start;gap:10px">'+
         '<div style="flex:1">'+
+          (f.location ? '<div style="display:inline-block;padding:2px 8px;border-radius:999px;background:var(--bg-accent,#FFD500);color:#1A1A1A;font-size:11px;font-weight:700;margin-bottom:6px">'+esc(f.location)+'</div>' : '')+
           '<div style="font-size:14px;color:var(--text-primary)">'+esc(f.message)+'</div>'+
+          (f.photo ? '<img src="'+f.photo+'" style="max-width:100%;border-radius:8px;margin-top:8px;border:1.5px solid var(--border-strong,var(--border));display:block">' : '')+
           '<div style="font-size:12px;color:var(--text-secondary);margin-top:8px">Par '+esc(f.author)+' · '+esc(f.when)+'</div>'+
         '</div>'+
         '<span onclick="appAction(\'deleteFeedbackForRole\',\''+f.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer;flex-shrink:0">'+icon('trash',16)+'</span>'+
@@ -4784,6 +5029,99 @@ window.storage = {
     return out;
   }
 
+  function screenProcessInfosReadView(){
+    const list = state.processInfos || [];
+    const viewing = state.processInfoViewingId ? list.find(function(p){ return p.id === state.processInfoViewingId; }) : null;
+
+    if (viewing){
+      let out = '<div style="padding:20px 16px 8px">'+
+        '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+          '<div onclick="appAction(\'backToProcessInfosReadList\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+          '<h1 class="mama-title" style="font-size:17px;color:var(--text-primary);margin:0;flex:1">'+esc(viewing.title)+'</h1>'+
+        '</div>'+
+      '</div>';
+      out += '<div style="padding:8px 16px">';
+      out += '<div style="padding:16px;border:2px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);font-size:14px;color:var(--text-primary);white-space:pre-wrap;line-height:1.5">'+
+        (viewing.content ? esc(viewing.content) : '<span style="color:var(--text-muted)">Contenu pas encore rempli.</span>')+
+      '</div>';
+      out += '</div>';
+      out += bottomNav('menu');
+      return out;
+    }
+
+    let out = '<div style="padding:20px 16px 8px">'+
+      '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+        '<div onclick="appAction(\'goManagerMenu\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<h1 class="mama-title" style="font-size:17px;color:var(--text-primary);margin:0;flex:1">Process & Infos</h1>'+
+      '</div>'+
+    '</div>';
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    if (list.length === 0){
+      out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucune fiche pour l\'instant.</div>';
+    }
+    list.forEach(function(p){
+      out += '<div onclick="appAction(\'viewProcessInfo\',\''+p.id+'\')" style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;align-items:center;gap:10px;cursor:pointer">'+
+        '<div style="flex:1;font-size:15px;font-weight:700;color:var(--text-primary)">'+esc(p.title)+'</div>'+
+        icon('chevronRight',18)+
+      '</div>';
+    });
+    out += '</div>';
+    out += bottomNav('menu');
+    return out;
+  }
+
+  function screenProcessInfos(){
+    const list = state.processInfos || [];
+    const editing = state.processInfoEditingId ? list.find(function(p){ return p.id === state.processInfoEditingId; }) : null;
+
+    if (editing){
+      let out = '<div style="padding:20px 16px 8px">'+
+        '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+          '<div onclick="appAction(\'backToProcessInfosList\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+          '<h1 class="mama-title" style="font-size:17px;color:var(--text-primary);margin:0;flex:1">Modifier la fiche</h1>'+
+        '</div>'+
+      '</div>';
+      out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:12px">';
+      out += '<div><label style="font-size:13px;color:var(--text-secondary);font-weight:600">Titre</label>'+
+        '<input id="process-info-title" value="'+esc(editing.title)+'" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px"></div>';
+      out += '<div><label style="font-size:13px;color:var(--text-secondary);font-weight:600">Contenu</label>'+
+        '<textarea id="process-info-content" placeholder="Écris ici le contenu de la fiche..." style="width:100%;box-sizing:border-box;min-height:260px;padding:12px;margin-top:6px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:14px;font-family:inherit;resize:vertical">'+esc(editing.content||'')+'</textarea></div>';
+      out += '<button onclick="appAction(\'saveProcessInfo\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Enregistrer</button>';
+      out += '</div>';
+      out += bottomNav('menu');
+      return out;
+    }
+
+    let out = '<div style="padding:20px 16px 8px">'+
+      '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+        '<div onclick="appAction(\'goAdminMenu\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<h1 class="mama-title" style="font-size:17px;color:var(--text-primary);margin:0;flex:1">Process & Infos</h1>'+
+      '</div>'+
+    '</div>';
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    if (list.length === 0){
+      out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucune fiche pour l\'instant.</div>';
+    }
+    list.forEach(function(p){
+      out += '<div style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;align-items:center;gap:10px">'+
+        '<div onclick="appAction(\'editProcessInfo\',\''+p.id+'\')" style="flex:1;cursor:pointer">'+
+          '<div style="font-size:15px;font-weight:700;color:var(--text-primary)">'+esc(p.title)+'</div>'+
+          (p.content ? '' : '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">Contenu à compléter</div>')+
+        '</div>'+
+        '<span onclick="appAction(\'editProcessInfo\',\''+p.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
+        '<span onclick="appAction(\'deleteProcessInfo\',\''+p.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
+      '</div>';
+    });
+    out += '</div>';
+    out += '<div style="padding:14px;margin:8px 16px;border:2px dashed var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1)">'+
+      '<div class="mama-title" style="font-size:13px;color:var(--text-primary);margin-bottom:8px">Ajouter une fiche</div>'+
+      '<input id="new-process-info-title" placeholder="Ex: Protocole incendie" style="width:100%;box-sizing:border-box;padding:10px;margin-bottom:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
+      '<button onclick="appAction(\'addProcessInfo\')" style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:13px;font-weight:800;text-transform:uppercase;cursor:pointer">Ajouter</button>'+
+    '</div>';
+    out += bottomNav('menu');
+    return out;
+  }
+
   function screenAdminRequisitionEditor(){
     const catId = state.adminReqCatId;
     const subId = state.adminReqSubId;
@@ -5004,6 +5342,7 @@ window.storage = {
       else if (state.loginStep === 'entertainment-code') html = screenLoginEntertainmentCode();
       else if (state.loginStep === 'events-code') html = screenLoginEventsCode();
       else if (state.loginStep === 'rh-code') html = screenLoginRhCode();
+      else if (state.loginStep === 'technique-code') html = screenLoginTechniqueCode();
       else if (state.loginStep === 'admin-code') html = screenLoginAdminCode();
     }
     else if (state.screen === 'home') html = screenHome();
@@ -5016,6 +5355,8 @@ window.storage = {
     else if (state.screen === 'other-access-menu') html = screenOtherAccessMenu();
     else if (state.screen === 'access-management') html = screenAccessManagement();
     else if (state.screen === 'admin-requisition-editor') html = screenAdminRequisitionEditor();
+    else if (state.screen === 'process-infos') html = screenProcessInfos();
+    else if (state.screen === 'process-infos-read') html = screenProcessInfosReadView();
     else if (state.screen === 'admin-menu') html = screenAdminMenu();
     else if (state.screen === 'mama-gang-management') html = screenMamaGangManagement();
     else if (state.screen === 'historique') html = screenHistorique();
@@ -5024,7 +5365,8 @@ window.storage = {
     else if (state.screen === 'whatsup') html = screenWhatsup();
     else if (state.screen === 'manager-planning') html = screenManagerPlanning();
     else if (state.screen === 'planning-view') html = screenPlanningView();
-    else if (state.screen === 'remontees') html = screenRemontees();
+    else if (state.screen === 'remontees-choose') html = screenRemonteesChooseRecipient();
+    else if (state.screen === 'remontees-form') html = screenRemonteesForm();
     else if (state.screen === 'view-feedbacks') html = screenViewFeedbacks();
     else if (state.screen === 'entertainment-list') html = screenEntertainmentList();
     else if (state.screen === 'entertainment-form') html = screenEntertainmentForm();
