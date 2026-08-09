@@ -39,7 +39,8 @@
   0%{ opacity:0; transform:translateY(4px) rotate(-6deg); }
   100%{ opacity:1; transform:translateY(0) rotate(0deg); }
 }
-.script-letter{ display:inline-block; opacity:0; animation:letterWrite 0.35s ease-out forwards; }
+.script-letter{ display:inline-block; opacity:0; animation:letterWrite 0.6s ease-out forwards; }
+@keyframes submitSpin{ to{ transform:rotate(360deg); } }
 @keyframes pulseAlert{
   0%{ box-shadow:3px 3px 0 var(--border-strong,#000), 0 0 0 0 rgba(232,67,43,0.6); }
   70%{ box-shadow:3px 3px 0 var(--border-strong,#000), 0 0 0 10px rgba(232,67,43,0); }
@@ -94,8 +95,23 @@ window.storage = {
   const DEFAULT_PROCESS_INFOS = [
     { id:'proc-1', title:'Accident de travail', content:'' },
     { id:'proc-2', title:'Mise en place du petit déjeuner', content:'' },
-    { id:'proc-3', title:'Procédure de remboursement', content:'' },
-    { id:'proc-4', title:'Les PM fixes', content:'' }
+    { id:'proc-3', title:'Procédure de remboursement', content:'Les feuilles de fiche de remboursement sont disponibles dans le porte-vue bleu, dans le tiroir du bar.\n\nIl faut :\n\n• Compléter les informations demandées et donner le maximum de renseignements sur ce qu\'il s\'est produit.\n• Joindre l\'addition réimprimée et le duplicata du ticket CB.\n• Déposer le document rempli sur le bureau de l\'Income.\n\nAttention : il faut saisir en caisse le montant qui aurait dû être encaissé, et pas celui réellement débité. Cela permet de voir l\'écart en banque.' },
+    { id:'proc-4', title:'Encaissements (PM et Cas particuliers)', content:'', pmItems:[
+        {name:'Chill Out', code:'9008', color:'#2AB0C5'},
+        {name:'Contestation FnB', code:'9000', color:'#E8432B'},
+        {name:'Karaoké', code:'9020', color:'#7A5FE0'},
+        {name:'Voucher FnB', code:'9015', color:'#3FAE6A'},
+        {name:'Yoga', code:'9011', color:'#FF8AB4'}
+    ], items:[
+      {title:'Carte de fidélité gratuite Accor (Statut Silver et +)', offert:'Non', explication:'La boisson de bienvenue est prévue dans la chambre sous forme d\'une boisson locale, mise avant l\'arrivée du client.', aFaire:'Ne rien faire, la boisson est déjà en chambre.'},
+      {title:'Carte de fidélité Disloyalty – boisson barista', offert:'Oui', explication:'Une boisson barista au choix est offerte chaque jour sur présentation de la carte Disloyalty au bar. Pas plus d\'une par jour.', aFaire:'Vérifier que la carte Disloyalty est valide et non une capture d\'écran, voir la validation par le guest, offrir une boisson barista, noter le n° de la carte (#...) lors du posting en Disloyalty.'},
+      {title:'Disloyalty – 10 %', offert:'Oui', explication:'Une remise de 10 % s\'applique sur l\'ensemble de la note pour les guests détenteurs de cette offre. 6 couverts MAX.', aFaire:'Vérifier que la carte est valide (pas de capture d\'écran), appliquer la remise de 10 %, noter en commentaire le numéro de carte (#...) lors du posting.'},
+      {title:'VOUMAMA', offert:'Oui', explication:'Voucher prépayé par le client ou un tiers (ex : 2 brunchs offerts). Édité par la réception, envoyé au client. Support papier épais.', aFaire:'Récupérer le document, vérifier la validité à la réception de l\'hôtel avant le départ du client.\n\nSi valide → le manager poste sur PM VOUCHER FNB 9015.\nSi expiré ou déjà utilisé → le client règle.\n\nContrôler que la valeur du Voucher couvre la consommation :\nExemple : Conso de 89€, Voucher de 84€ = le client doit régler les 5€ manquants.\n\nPréciser à Céline Marmet dans son duty du jour le numéro de la promotion (indiqué sur le document) et conserver le voucher dans l\'enveloppe du jour. Il devra être joint dans le Night Package.'},
+      {title:'COMMAMA', offert:'Oui', explication:'Offert commercial émis par la direction.', aFaire:'Récupérer le document, vérifier la validité à la réception avant le départ du client.\nSi valide → le manager poste en OFFERT COM. Préciser à Céline Marmet dans son duty du jour le numéro de la promotion (indiqué sur le document) et conserver le voucher dans l\'enveloppe du jour.'},
+      {title:'Bon cocktail - offres Staycation / Lovoff', offert:'Oui', explication:'2 cocktails à 12€ inclus dans l\'offre. Le client peut choisir un cocktail plus cher et payer la différence. Bon cocktail date limite.', aFaire:'Vérifier le bon cocktail et sa date de validité. Appliquer 12€ de réduction sur le cocktail, et faire payer la différence si existante (divers).'},
+      {title:'Bon boisson offert - geste commercial / plainte', offert:'Oui', explication:'Un bon est remis en geste commercial avec mention "offert / geste commercial", valable jusqu\'à une date définie. Si la boisson dépasse 12€, le client paie la différence.', aFaire:'Vérifier le bon cocktail et sa date de validité. Appliquer 12€ de réduction sur la boisson, la poster dans la bonne catégorie, et faire payer la différence si existante (divers).'},
+      {title:'Peeps 30%', offert:'Oui', explication:'Réduction de 30 % sur l\'ensemble de l\'addition, réservée aux membres du gang. Applicable sur shift ou hors shift avec accord de la direction 24 h avant le repas. 4 couverts MAX.', aFaire:'Vérifier que toutes les conditions sont réunies, poster en PEEPS, et indiquer en mémo le nom du membre du gang bénéficiant de la réduction.'}
+    ] }
   ];
   const DEFAULT_STRUCTURE = {
     categories: [
@@ -961,7 +977,11 @@ window.storage = {
     up: '<path d="M6 15l6-6 6 6"/>',
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
     eye: '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>',
-    event: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/><circle cx="9" cy="15" r="1.3"/><circle cx="15" cy="15" r="1.3"/>'
+    event: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/><circle cx="9" cy="15" r="1.3"/><circle cx="15" cy="15" r="1.3"/>',
+    euro: '<path d="M17 6.5a7 7 0 100 11"/><path d="M3.5 10h11"/><path d="M3.5 14h9"/>',
+    mask: '<path d="M4 9c0-3.3 3.6-6 8-6s8 2.7 8 6c0 6.2-3.2 11-8 11S4 15.2 4 9z"/><circle cx="9" cy="10" r="1.1"/><circle cx="15" cy="10" r="1.1"/><path d="M9 15c1.2 1 4.8 1 6 0"/>',
+    heart: '<path d="M12 21s-7-4.35-9.5-8.5C.7 8.9 3 5.3 6.6 5.3c2 0 3.6 1.2 5.4 3 1.8-1.8 3.4-3 5.4-3 3.6 0 5.9 3.6 4.1 7.2C19 16.65 12 21 12 21z"/>',
+    tool: '<path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.6 2.6-2.7-2.7 2.6-2.6z"/>'
   };
   function icon(name, size){
     size = size || 20;
@@ -1012,6 +1032,7 @@ window.storage = {
     remonteeLocation: null,
     remonteeLocationManual: false,
     remonteePhoto: null,
+    remonteeMessageDraft: '',
     viewFeedbacksCategory: null,
     feedbacksList: [],
     feedbackCounts: { managers:0, econome:0, events:0, entertainment:0, rh:0 },
@@ -1070,6 +1091,8 @@ window.storage = {
     perteError: false,
     loading: true,
     globalError: null,
+    isSubmitting: false,
+    submittingMessage: '',
     err: null
   };
 
@@ -1657,6 +1680,9 @@ window.storage = {
   }
 
   async function doValidateChecklist(){
+    state.isSubmitting = true;
+    state.submittingMessage = 'Envoi de la checklist...';
+    render();
     const subId = state.sublieuId;
     const cat = findCategory(state.categoryId);
     const sub = findSublieu(state.categoryId, subId);
@@ -1683,6 +1709,7 @@ window.storage = {
     state.progress[subId] = resetProgress;
     state.historique = await getHistorique();
     state.screen = (state.categoryId === 'fermeture') ? 'fermeture' : 'home';
+    state.isSubmitting = false;
     render();
   }
 
@@ -1718,6 +1745,52 @@ window.storage = {
         seedGangUsers.push({ id:'gang-seed-arnaud', name:'Arnaud', code:'1789' });
         await saveMamaGangUsers(seedGangUsers);
       }
+      try {
+        const existingProcessInfos = await getProcessInfos();
+        const pmFiche = existingProcessInfos.find(function(p){ return p.id === 'proc-4'; });
+        let pmFicheChanged = false;
+        if (pmFiche && pmFiche.items){
+          const voumamaItem = pmFiche.items.find(function(it){ return it.title === 'VOUMAMA'; });
+          if (voumamaItem && !voumamaItem.aFaire.includes('Night Package')){
+            voumamaItem.aFaire = 'Récupérer le document, vérifier la validité à la réception de l\'hôtel avant le départ du client.\n\nSi valide → le manager poste sur PM VOUCHER FNB 9015.\nSi expiré ou déjà utilisé → le client règle.\n\nContrôler que la valeur du Voucher couvre la consommation :\nExemple : Conso de 89€, Voucher de 84€ = le client doit régler les 5€ manquants.\n\nPréciser à Céline Marmet dans son duty du jour le numéro de la promotion (indiqué sur le document) et conserver le voucher dans l\'enveloppe du jour. Il devra être joint dans le Night Package.';
+            await saveProcessInfos(existingProcessInfos);
+          }
+        }
+        const rembFiche = existingProcessInfos.find(function(p){ return p.id === 'proc-3'; });
+        if (rembFiche && !(rembFiche.content||'').includes('écart en banque')){
+          rembFiche.content = 'Les feuilles de fiche de remboursement sont disponibles dans le porte-vue bleu, dans le tiroir du bar.\n\nIl faut :\n\n• Compléter les informations demandées et donner le maximum de renseignements sur ce qu\'il s\'est produit.\n• Joindre l\'addition réimprimée et le duplicata du ticket CB.\n• Déposer le document rempli sur le bureau de l\'Income.\n\nAttention : il faut saisir en caisse le montant qui aurait dû être encaissé, et pas celui réellement débité. Cela permet de voir l\'écart en banque.';
+          await saveProcessInfos(existingProcessInfos);
+        }
+        if (pmFiche && pmFiche.title !== 'Encaissements (PM et Cas particuliers)'){
+          pmFiche.title = 'Encaissements (PM et Cas particuliers)';
+          pmFicheChanged = true;
+        }
+        if (pmFiche && !pmFiche.pmItems){
+          pmFiche.title = 'Encaissements (PM et Cas particuliers)';
+          pmFicheChanged = true;
+          pmFiche.content = '';
+          pmFiche.pmItems = [
+            {name:'Chill Out', code:'9008', color:'#2AB0C5'},
+            {name:'Contestation FnB', code:'9000', color:'#E8432B'},
+            {name:'Karaoké', code:'9020', color:'#7A5FE0'},
+            {name:'Voucher FnB', code:'9015', color:'#3FAE6A'},
+            {name:'Yoga', code:'9011', color:'#FF8AB4'}
+          ];
+          pmFiche.items = [
+      {title:'Carte de fidélité gratuite Accor (Statut Silver et +)', offert:'Non', explication:'La boisson de bienvenue est prévue dans la chambre sous forme d\'une boisson locale, mise avant l\'arrivée du client.', aFaire:'Ne rien faire, la boisson est déjà en chambre.'},
+      {title:'Carte de fidélité Disloyalty – boisson barista', offert:'Oui', explication:'Une boisson barista au choix est offerte chaque jour sur présentation de la carte Disloyalty au bar. Pas plus d\'une par jour.', aFaire:'Vérifier que la carte Disloyalty est valide et non une capture d\'écran, voir la validation par le guest, offrir une boisson barista, noter le n° de la carte (#...) lors du posting en Disloyalty.'},
+      {title:'Disloyalty – 10 %', offert:'Oui', explication:'Une remise de 10 % s\'applique sur l\'ensemble de la note pour les guests détenteurs de cette offre. 6 couverts MAX.', aFaire:'Vérifier que la carte est valide (pas de capture d\'écran), appliquer la remise de 10 %, noter en commentaire le numéro de carte (#...) lors du posting.'},
+      {title:'VOUMAMA', offert:'Oui', explication:'Voucher prépayé par le client ou un tiers (ex : 2 brunchs offerts). Édité par la réception, envoyé au client. Support papier épais.', aFaire:'Récupérer le document, vérifier la validité à la réception de l\'hôtel avant le départ du client.\n\nSi valide → le manager poste sur PM VOUCHER FNB 9015.\nSi expiré ou déjà utilisé → le client règle.\n\nContrôler que la valeur du Voucher couvre la consommation :\nExemple : Conso de 89€, Voucher de 84€ = le client doit régler les 5€ manquants.\n\nPréciser à Céline Marmet dans son duty du jour le numéro de la promotion (indiqué sur le document) et conserver le voucher dans l\'enveloppe du jour. Il devra être joint dans le Night Package.'},
+      {title:'COMMAMA', offert:'Oui', explication:'Offert commercial émis par la direction.', aFaire:'Récupérer le document, vérifier la validité à la réception avant le départ du client.\nSi valide → le manager poste en OFFERT COM. Préciser à Céline Marmet dans son duty du jour le numéro de la promotion (indiqué sur le document) et conserver le voucher dans l\'enveloppe du jour.'},
+      {title:'Bon cocktail - offres Staycation / Lovoff', offert:'Oui', explication:'2 cocktails à 12€ inclus dans l\'offre. Le client peut choisir un cocktail plus cher et payer la différence. Bon cocktail date limite.', aFaire:'Vérifier le bon cocktail et sa date de validité. Appliquer 12€ de réduction sur le cocktail, et faire payer la différence si existante (divers).'},
+      {title:'Bon boisson offert - geste commercial / plainte', offert:'Oui', explication:'Un bon est remis en geste commercial avec mention "offert / geste commercial", valable jusqu\'à une date définie. Si la boisson dépasse 12€, le client paie la différence.', aFaire:'Vérifier le bon cocktail et sa date de validité. Appliquer 12€ de réduction sur la boisson, la poster dans la bonne catégorie, et faire payer la différence si existante (divers).'},
+      {title:'Peeps 30%', offert:'Oui', explication:'Réduction de 30 % sur l\'ensemble de l\'addition, réservée aux membres du gang. Applicable sur shift ou hors shift avec accord de la direction 24 h avant le repas. 4 couverts MAX.', aFaire:'Vérifier que toutes les conditions sont réunies, poster en PEEPS, et indiquer en mémo le nom du membre du gang bénéficiant de la réduction.'}
+    ];
+          await saveProcessInfos(existingProcessInfos);
+        } else if (pmFicheChanged){
+          await saveProcessInfos(existingProcessInfos);
+        }
+      } catch(e){}
       state.loading = false;
       render();
     } catch(e){
@@ -2057,6 +2130,9 @@ window.storage = {
         render();
         return;
       }
+      state.isSubmitting = true;
+      state.submittingMessage = 'Envoi de la fiche...';
+      render();
       const id = editing ? editing.id : ('evt-'+Date.now());
       let filename = editing ? editing.filename : null;
       let newPdfDataUrl = null;
@@ -2085,6 +2161,7 @@ window.storage = {
       state.eventsEditingId = null;
       state.eventsSaveError = false;
       state.screen = 'events-list';
+      state.isSubmitting = false;
       render();
     }
     else if (action === 'deleteEventSheet'){
@@ -2612,6 +2689,9 @@ window.storage = {
         render();
         return;
       }
+      state.isSubmitting = true;
+      state.submittingMessage = 'Envoi du planning...';
+      render();
       const pdfDataUrl = await new Promise(function(resolve, reject){
         const reader = new FileReader();
         reader.onload = function(){ resolve(reader.result); };
@@ -2629,6 +2709,7 @@ window.storage = {
       await saveSchedules(list);
       state.schedules = list;
       state.planningSaveError = false;
+      state.isSubmitting = false;
       render();
     }
     else if (action === 'deleteManagerPlanningPdf'){
@@ -2666,6 +2747,7 @@ window.storage = {
       state.remonteeLocation = null;
       state.remonteeLocationManual = false;
       state.remonteePhoto = null;
+      state.remonteeMessageDraft = '';
       state.screen = 'remontees-choose';
       render();
     }
@@ -2681,6 +2763,8 @@ window.storage = {
       render();
     }
     else if (action === 'selectRemonteeLocation'){
+      const msgEl = document.getElementById('feedback-message');
+      if (msgEl) state.remonteeMessageDraft = msgEl.value;
       if (payload === 'autres'){
         state.remonteeLocationManual = true;
         state.remonteeLocation = '';
@@ -2691,6 +2775,8 @@ window.storage = {
       render();
     }
     else if (action === 'captureRemonteePhoto'){
+      const msgElBefore = document.getElementById('feedback-message');
+      if (msgElBefore) state.remonteeMessageDraft = msgElBefore.value;
       const fileInput = document.getElementById('remontee-photo-input');
       if (fileInput && fileInput.files && fileInput.files[0]){
         const file = fileInput.files[0];
@@ -2707,11 +2793,14 @@ window.storage = {
       render();
     }
     else if (action === 'removeRemonteePhoto'){
+      const msgElRemove = document.getElementById('feedback-message');
+      if (msgElRemove) state.remonteeMessageDraft = msgElRemove.value;
       state.remonteePhoto = null;
       render();
     }
     else if (action === 'submitFeedback'){
       const message = document.getElementById('feedback-message').value.trim();
+      state.remonteeMessageDraft = document.getElementById('feedback-message').value;
       const recipient = state.remonteeRecipient;
       const location = state.remonteeLocationManual
         ? document.getElementById('remontee-location-manual').value.trim()
@@ -2721,6 +2810,9 @@ window.storage = {
         render();
         return;
       }
+      state.isSubmitting = true;
+      state.submittingMessage = 'Envoi de la remontée...';
+      render();
       const list = await getFeedbacks();
       const recipientsList = recipient === 'managers' ? ['managers'] : [recipient, 'managers'];
       list.unshift({
@@ -2735,6 +2827,8 @@ window.storage = {
       await saveFeedbacks(list.slice(0,2000));
       state.feedbackSent = true;
       state.feedbackError = false;
+      state.remonteeMessageDraft = '';
+      state.isSubmitting = false;
       render();
     }
     else if (action === 'goViewFeedbacks'){
@@ -2844,6 +2938,19 @@ window.storage = {
       const list = (state.processInfos||[]).filter(function(p){ return p.id !== payload; });
       await saveProcessInfos(list);
       state.processInfos = list;
+      render();
+    }
+    else if (action === 'moveProcessInfoToPosition'){
+      const list = state.processInfos || [];
+      const idx = list.findIndex(function(p){ return p.id === payload.id; });
+      let pos = (payload.position||1) - 1;
+      if (pos < 0) pos = 0;
+      if (pos > list.length-1) pos = list.length-1;
+      if (idx >= 0 && pos !== idx){
+        const [item] = list.splice(idx, 1);
+        list.splice(pos, 0, item);
+        await saveProcessInfos(list);
+      }
       render();
     }
     else if (action === 'adminReqOpenEditor'){
@@ -3160,6 +3267,9 @@ window.storage = {
         return;
       }
       state.perteError = false;
+      state.isSubmitting = true;
+      state.submittingMessage = 'Envoi de la perte...';
+      render();
       const now = new Date();
       await addPerte({
         id: 'perte-'+Date.now(),
@@ -3173,6 +3283,7 @@ window.storage = {
         monthKey: monthKeyOf(now)
       });
       state.perteSaved = true;
+      state.isSubmitting = false;
       render();
     }
     else if (action === 'toggleTemperatureChecklistItem'){
@@ -3182,6 +3293,9 @@ window.storage = {
       render();
     }
     else if (action === 'saveTracabilite'){
+      state.isSubmitting = true;
+      state.submittingMessage = 'Envoi de la traçabilité...';
+      render();
       const cat = findCategory(state.categoryId);
       const sub = findSublieu(state.categoryId, state.sublieuId);
       const entries = sub.products.map(function(product, i){
@@ -3204,6 +3318,7 @@ window.storage = {
         entries: entries
       });
       state.tracabiliteSaved = true;
+      state.isSubmitting = false;
       render();
     }
     else if (action === 'saveTemperatures'){
@@ -3217,6 +3332,9 @@ window.storage = {
         return;
       }
       state.temperatureChecklistError = false;
+      state.isSubmitting = true;
+      state.submittingMessage = 'Envoi du relevé...';
+      render();
       const readings = sub.fridges.map(function(fridge, i){
         const fridgeName = typeof fridge === 'object' ? fridge.name : fridge;
         const input = document.getElementById('temp-input-'+i);
@@ -3238,6 +3356,7 @@ window.storage = {
       });
       state.temperatureSaved = true;
       state.temperatureChecklistChecked = {};
+      state.isSubmitting = false;
       render();
     }
     else if (action === 'requisitionNextFridge' || action === 'requisitionPrevFridge'){
@@ -3252,6 +3371,9 @@ window.storage = {
       render();
     }
     else if (action === 'saveRequisition'){
+      state.isSubmitting = true;
+      state.submittingMessage = 'Envoi de la réqui...';
+      render();
       const cat = findCategory(state.categoryId);
       const sub = findSublieu(state.categoryId, state.sublieuId);
       const now = new Date();
@@ -3299,6 +3421,7 @@ window.storage = {
       state.requisitionSaved = true;
       state.requisitionDraft = {};
       state.requisitionFridgeIndex = 0;
+      state.isSubmitting = false;
       render();
     }
     else if (action === 'backToSublieux'){
@@ -3453,20 +3576,20 @@ window.storage = {
   function screenLoginSimple(){
     const word = 'Copilote';
     const letters = word.split('').map(function(ch, i){
-      return '<span class="script-letter" style="animation-delay:'+(i*0.09)+'s">'+ch+'</span>';
+      return '<span class="script-letter" style="animation-delay:'+(i*0.22)+'s">'+ch+'</span>';
     }).join('');
     const quickRoles = [
       {action:'chooseManager', label:'Manager', color:'var(--bg-accent,#FFD500)', fg:'#1A1A1A', icon:'settings'},
-      {action:'chooseEconome', label:'Économe', color:'#2AB0C5', fg:'#fff', icon:'archive'},
-      {action:'chooseEntertainment', label:'Enter.', color:'#FF8AB4', fg:'#1A1A1A', icon:'event'},
+      {action:'chooseEconome', label:'Économe', color:'#2AB0C5', fg:'#fff', icon:'euro'},
+      {action:'chooseEntertainment', label:'Enter.', color:'#FF8AB4', fg:'#1A1A1A', icon:'mask'},
       {action:'chooseEvents', label:'Events', color:'#7A5FE0', fg:'#fff', icon:'event'},
-      {action:'chooseRH', label:'RH', color:'#3FAE6A', fg:'#fff', icon:'event'},
-      {action:'chooseTechnique', label:'Techn.', color:'#FF9F43', fg:'#fff', icon:'settings'},
+      {action:'chooseRH', label:'RH', color:'#3FAE6A', fg:'#fff', icon:'heart'},
+      {action:'chooseTechnique', label:'Techn.', color:'#FF9F43', fg:'#fff', icon:'tool'},
       {action:'chooseAdmin', label:'Admin', color:'#1A1A1A', fg:'#fff', icon:'lock'}
     ];
     const quickRolesHtml = quickRoles.map(function(r){
       return '<div onclick="appAction(\''+r.action+'\')" style="flex:0 0 60px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">'+
-        '<div style="width:44px;height:44px;border-radius:50%;background:'+r.color+';color:'+r.fg+';border:2px solid var(--border-strong,#000);display:flex;align-items:center;justify-content:center">'+icon(r.icon,20)+'</div>'+
+        '<div style="width:44px;height:44px;border-radius:50%;background:'+r.color+';color:'+r.fg+';border:2px solid var(--border-strong,#000);display:flex;align-items:center;justify-content:center">'+icon(r.icon,26)+'</div>'+
         '<span style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.2px">'+r.label+'</span>'+
       '</div>';
     }).join('');
@@ -4669,7 +4792,7 @@ window.storage = {
 
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:14px">';
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Ton message</label>'+
-      '<textarea id="feedback-message" placeholder="'+(state.remonteeRecipient==='technique' ? 'Ex: (tel élément cassé, fuite, problème électrique...)' : 'Ex: il manque du matériel en salle, un client a signalé...')+'" style="width:100%;box-sizing:border-box;min-height:100px;padding:12px;margin-top:6px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px;font-family:inherit;resize:vertical"></textarea></div>';
+      '<textarea id="feedback-message" placeholder="'+(state.remonteeRecipient==='technique' ? 'Ex: (tel élément cassé, fuite, problème électrique...)' : 'Ex: il manque du matériel en salle, un client a signalé...')+'" style="width:100%;box-sizing:border-box;min-height:100px;padding:12px;margin-top:6px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px;font-family:inherit;resize:vertical">'+(state.remonteeMessageDraft?esc(state.remonteeMessageDraft):'')+'</textarea></div>';
 
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Localisation</label>'+
       '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
@@ -5041,9 +5164,36 @@ window.storage = {
         '</div>'+
       '</div>';
       out += '<div style="padding:8px 16px">';
-      out += '<div style="padding:16px;border:2px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);font-size:14px;color:var(--text-primary);white-space:pre-wrap;line-height:1.5">'+
-        (viewing.content ? esc(viewing.content) : '<span style="color:var(--text-muted)">Contenu pas encore rempli.</span>')+
-      '</div>';
+      if (viewing.pmItems && viewing.pmItems.length > 0){
+        out += '<div class="mama-title" style="font-size:14px;color:var(--text-accent,#E8432B);margin:0 0 8px">PM</div>';
+        out += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">';
+        viewing.pmItems.forEach(function(pm){
+          out += '<div style="padding:8px 14px;border-radius:999px;border:2px solid var(--border-strong,#000);background:'+pm.color+';color:#fff;font-size:13px;font-weight:700">'+esc(pm.name)+' : '+esc(pm.code)+'</div>';
+        });
+        out += '</div>';
+      }
+      if (viewing.content){
+        out += '<div style="padding:16px;border:2px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);font-size:14px;color:var(--text-primary);white-space:pre-wrap;line-height:1.5;margin-bottom:16px">'+esc(viewing.content)+'</div>';
+      }
+      if (viewing.items && viewing.items.length > 0){
+        out += '<div class="mama-title" style="font-size:14px;color:var(--text-accent,#E8432B);margin:0 0 8px">Cas Particuliers</div>';
+        out += '<div style="display:flex;flex-direction:column;gap:8px">';
+        viewing.items.forEach(function(it){
+          out += '<details style="border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);overflow:hidden">'+
+            '<summary style="padding:12px 14px;cursor:pointer;font-weight:700;font-size:14px;color:var(--text-primary);list-style:none">'+esc(it.title)+
+            '</summary>'+
+            '<div style="border-top:1px solid var(--border);padding:12px 14px;background:var(--surface-0);display:flex;flex-direction:column;gap:10px">'+
+              '<div><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:'+(it.offert==='Oui'?'var(--bg-success,#EAF3DE)':'var(--surface-1)')+';color:'+(it.offert==='Oui'?'var(--text-success,#3B6D11)':'var(--text-muted)')+'">Offert : '+esc(it.offert)+'</span></div>'+
+              '<div><div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:3px">Explication</div><div style="font-size:13px;color:var(--text-primary);white-space:pre-wrap">'+esc(it.explication)+'</div></div>'+
+              '<div><div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:3px">Ce que je dois faire</div><div style="font-size:13px;color:var(--text-primary);white-space:pre-wrap">'+esc(it.aFaire)+'</div></div>'+
+            '</div>'+
+          '</details>';
+        });
+        out += '</div>';
+      }
+      if (!viewing.pmItems && !viewing.content && !viewing.items){
+        out += '<div style="padding:16px;border:2px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);color:var(--text-muted);font-size:14px;text-align:center">Contenu pas encore rempli.</div>';
+      }
       out += '</div>';
       out += bottomNav('menu');
       return out;
@@ -5102,8 +5252,9 @@ window.storage = {
     if (list.length === 0){
       out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucune fiche pour l\'instant.</div>';
     }
-    list.forEach(function(p){
+    list.forEach(function(p, idx){
       out += '<div style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;align-items:center;gap:10px">'+
+        '<input type="number" min="1" max="'+list.length+'" value="'+(idx+1)+'" onchange="appAction(\'moveProcessInfoToPosition\', {id:\''+p.id+'\', position:parseInt(this.value,10)})" style="width:38px;padding:4px;text-align:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:12px;flex-shrink:0">'+
         '<div onclick="appAction(\'editProcessInfo\',\''+p.id+'\')" style="flex:1;cursor:pointer">'+
           '<div style="font-size:15px;font-weight:700;color:var(--text-primary)">'+esc(p.title)+'</div>'+
           (p.content ? '' : '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">Contenu à compléter</div>')+
@@ -5383,6 +5534,14 @@ window.storage = {
         '<strong>Erreur technique :</strong> '+esc(state.globalError)+
         '<div onclick="appAction(\'dismissGlobalError\')" style="margin-top:10px;text-decoration:underline;cursor:pointer;font-weight:700">Fermer</div>'+
       '</div>' + html;
+    }
+    if (state.isSubmitting){
+      html += '<div style="position:fixed;inset:0;background:rgba(26,26,26,0.55);display:flex;align-items:center;justify-content:center;z-index:9999">'+
+        '<div style="background:var(--surface-1);border:2.5px solid var(--border-strong,#000);border-radius:16px;box-shadow:5px 5px 0 var(--border-strong,#000);padding:24px 28px;display:flex;flex-direction:column;align-items:center;gap:12px;max-width:240px">'+
+          '<div style="width:34px;height:34px;border-radius:50%;border:4px solid rgba(24,95,165,0.2);border-top-color:var(--text-accent,#185FA5);animation:submitSpin 0.8s linear infinite"></div>'+
+          '<div style="font-size:14px;font-weight:700;color:var(--text-primary);text-align:center">'+esc(state.submittingMessage||'Envoi en cours...')+'</div>'+
+        '</div>'+
+      '</div>';
     }
     root.innerHTML = html;
     const todayCard = document.getElementById('whatsup-today-card');
