@@ -1713,6 +1713,51 @@ window.storage = {
     render();
   }
 
+  const SESSION_SNAPSHOT_KEY = 'copilote_session_snapshot';
+  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','remonteeRecipient','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto'];
+  function compressImageDataUrl(dataUrl, maxWidth, quality){
+    return new Promise(function(resolve){
+      try {
+        const img = new Image();
+        img.onload = function(){
+          let w = img.width, h = img.height;
+          if (w > maxWidth){
+            h = Math.round(h * (maxWidth / w));
+            w = maxWidth;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = function(){ resolve(dataUrl); };
+        img.src = dataUrl;
+      } catch(e){ resolve(dataUrl); }
+    });
+  }
+  function persistSessionSnapshot(){
+    try {
+      if (typeof sessionStorage === 'undefined') return;
+      const snap = {};
+      SESSION_SNAPSHOT_FIELDS.forEach(function(f){ snap[f] = state[f]; });
+      snap._ts = Date.now();
+      sessionStorage.setItem(SESSION_SNAPSHOT_KEY, JSON.stringify(snap));
+    } catch(e){}
+  }
+  function restoreSessionSnapshot(){
+    try {
+      if (typeof sessionStorage === 'undefined') return false;
+      const raw = sessionStorage.getItem(SESSION_SNAPSHOT_KEY);
+      if (!raw) return false;
+      const snap = JSON.parse(raw);
+      // Une sauvegarde de plus de 10 minutes est jugée trop ancienne pour être restaurée automatiquement.
+      if (!snap._ts || (Date.now() - snap._ts) > 10*60*1000) return false;
+      if (!snap.name) return false;
+      SESSION_SNAPSHOT_FIELDS.forEach(function(f){ if (snap[f] !== undefined) state[f] = snap[f]; });
+      return true;
+    } catch(e){ return false; }
+  }
   async function init(){
     if (typeof window.storage === 'undefined'){
       document.getElementById('app').innerHTML =
@@ -1791,6 +1836,7 @@ window.storage = {
           await saveProcessInfos(existingProcessInfos);
         }
       } catch(e){}
+      restoreSessionSnapshot();
       state.loading = false;
       render();
     } catch(e){
@@ -1811,6 +1857,7 @@ window.storage = {
     } catch(err){
       console.error('Erreur dans appAction("'+action+'"):', err);
       state.globalError = (err && err.message) ? err.message : String(err);
+      state.isSubmitting = false;
       render();
     }
   };
@@ -2235,7 +2282,9 @@ window.storage = {
       }
     }
     else if (action === 'logout'){
-      state.name=''; state.managerUnlocked=false; state.economeUnlocked=false; state.entertainmentUnlocked=false; state.eventsUnlocked=false; state.rhUnlocked=false; state.adminUnlocked=false; state.techniqueUnlocked=false; state.cameFromManagerMenu=false; state.loginStep='simple'; state.screen='login'; render();
+      state.name=''; state.managerUnlocked=false; state.economeUnlocked=false; state.entertainmentUnlocked=false; state.eventsUnlocked=false; state.rhUnlocked=false; state.adminUnlocked=false; state.techniqueUnlocked=false; state.cameFromManagerMenu=false; state.loginStep='simple'; state.screen='login';
+      try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(SESSION_SNAPSHOT_KEY); } catch(e){}
+      render();
     }
     else if (action === 'goHome'){
       const [structure, events, eventSheets, rhEvents] = await Promise.all([
@@ -2787,7 +2836,7 @@ window.storage = {
             reader.onerror = reject;
             reader.readAsDataURL(file);
           });
-          state.remonteePhoto = dataUrl;
+          state.remonteePhoto = await compressImageDataUrl(dataUrl, 1200, 0.7);
         } catch(e){}
       }
       render();
@@ -2863,11 +2912,15 @@ window.storage = {
     else if (action === 'deleteFeedbackForRole'){
       const category = state.viewFeedbacksCategory;
       let list = await getFeedbacks();
-      const target = list.find(function(f){ return f.id === payload; });
-      if (target){
-        target.recipients = (target.recipients||[]).filter(function(r){ return r !== category; });
-        if (target.recipients.length === 0){
-          list = list.filter(function(f){ return f.id !== payload; });
+      if (category === 'technique'){
+        list = list.filter(function(f){ return f.id !== payload; });
+      } else {
+        const target = list.find(function(f){ return f.id === payload; });
+        if (target){
+          target.recipients = (target.recipients||[]).filter(function(r){ return r !== category; });
+          if (target.recipients.length === 0){
+            list = list.filter(function(f){ return f.id !== payload; });
+          }
         }
       }
       await saveFeedbacks(list);
@@ -5544,6 +5597,7 @@ window.storage = {
       '</div>';
     }
     root.innerHTML = html;
+    persistSessionSnapshot();
     const todayCard = document.getElementById('whatsup-today-card');
     if (todayCard && todayCard.scrollIntoView){
       todayCard.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
