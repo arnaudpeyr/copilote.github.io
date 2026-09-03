@@ -1116,7 +1116,25 @@ window.storage = {
     return d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
   }
 
-  async function loadStructure(){
+  const CURRENT_MIGRATION_VERSION = 1;
+  async function getMigrationVersion(){
+    try {
+      const res = await window.storage.get('migrationVersion', true);
+      return parseInt(res.value, 10) || 0;
+    } catch(e){
+      return 0;
+    }
+  }
+  async function getStructureRaw(){
+    try {
+      const res = await window.storage.get('structure', true);
+      return JSON.parse(res.value);
+    } catch(e){
+      await window.storage.set('structure', JSON.stringify(DEFAULT_STRUCTURE), true);
+      return JSON.parse(JSON.stringify(DEFAULT_STRUCTURE));
+    }
+  }
+  async function loadStructureWithMigrations(){
     let structure;
     try {
       const res = await window.storage.get('structure', true);
@@ -1824,11 +1842,20 @@ window.storage = {
       return;
     }
     try {
-      const [structure, historique, seedUsers, seedGangUsers] = await Promise.all([
-        loadStructure(), getHistorique(), getAccessUsers(), getMamaGangUsers()
+      const [structureRaw, historique, seedUsers, seedGangUsers, migrationVersion] = await Promise.all([
+        getStructureRaw(), getHistorique(), getAccessUsers(), getMamaGangUsers(), getMigrationVersion()
       ]);
-      state.structure = structure;
       state.historique = historique;
+      if (migrationVersion >= CURRENT_MIGRATION_VERSION){
+        // Chemin rapide : tout est déjà à jour, on saute toutes les vérifications
+        // de migration (gain de temps important à chaque connexion).
+        state.structure = structureRaw;
+        restoreSessionSnapshot();
+        state.loading = false;
+        render();
+        return;
+      }
+      state.structure = await loadStructureWithMigrations();
       let seedUsersChanged = false;
       const oldAdminSeed = seedUsers.find(function(u){ return u.id === 'usr-seed-arnaud-admin'; });
       if (oldAdminSeed && oldAdminSeed.code !== '1515'){
@@ -1891,6 +1918,7 @@ window.storage = {
           await saveProcessInfos(existingProcessInfos);
         }
       } catch(e){}
+      await window.storage.set('migrationVersion', String(CURRENT_MIGRATION_VERSION), true);
       restoreSessionSnapshot();
       state.loading = false;
       render();
@@ -2406,7 +2434,7 @@ window.storage = {
     }
     else if (action === 'goHome'){
       const [structure, events, eventSheets, rhEvents] = await Promise.all([
-        loadStructure(), getEvents(), getEventSheets(), getRhEvents()
+        getStructureRaw(), getEvents(), getEventSheets(), getRhEvents()
       ]);
       state.structure = structure;
       state.events = events;
@@ -2604,7 +2632,7 @@ window.storage = {
     }
     else if (action === 'goFermeture'){
       if (state.managerUnlocked){
-        state.structure = await loadStructure();
+        state.structure = await getStructureRaw();
         state.screen = 'fermeture';
       } else {
         state.lockedFor = 'fermeture';
@@ -3441,7 +3469,7 @@ window.storage = {
       render();
     }
     else if (action === 'openSublieu'){
-      state.structure = await loadStructure();
+      state.structure = await getStructureRaw();
       state.categoryId = payload.catId;
       state.sublieuId = payload.subId;
       state.confirmValidateAnyway = false;
@@ -3666,7 +3694,7 @@ window.storage = {
       render();
     }
     else if (action === 'backToSublieux'){
-      state.structure = await loadStructure();
+      state.structure = await getStructureRaw();
       state.screen = (state.categoryId === 'fermeture') ? 'fermeture' : 'home';
       render();
     }
@@ -4764,10 +4792,13 @@ window.storage = {
           '</div>';
         });
         sheets.forEach(function(sh){
-          const locs = (sh.locations && sh.locations.length) ? sh.locations.join(', ') : '';
+          const prestationsSummary = (sh.prestations && sh.prestations.length)
+            ? sh.prestations.map(function(p){ return (p.time?p.time+' ':'')+p.zone; }).join(' · ')
+            : ((sh.locations && sh.locations.length) ? sh.locations.join(', ') : '');
           out += '<div style="border:2px solid var(--border-strong,var(--border));border-radius:10px;padding:12px;margin-bottom:10px;background:var(--surface-0)">'+
             '<span style="display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#fff;background:#7A5FE0;padding:2px 8px;border-radius:999px;margin-bottom:6px">Events</span>'+
-            (locs ? '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(locs)+'</div>' : '')+
+            (sh.groupName ? '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(sh.groupName)+'</div>' : '')+
+            (prestationsSummary ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">'+esc(prestationsSummary)+'</div>' : '')+
             (sh.guests ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">'+esc(sh.guests)+' guests</div>' : '')+
             (sh.note ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">'+esc(sh.note)+'</div>' : '')+
           '</div>';
