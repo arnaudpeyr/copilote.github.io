@@ -92,6 +92,7 @@ window.storage = {
 // ===== Fin de l'adaptateur Supabase =====
 
 (function(){
+  const DEFAULT_BAR_RECETTES = [];
   const DEFAULT_PROCESS_INFOS = [
     { id:'proc-1', title:'Accident de travail', content:'' },
     { id:'proc-2', title:'Mise en place du petit déjeuner', content:'' },
@@ -280,6 +281,7 @@ window.storage = {
           ]}
       ]},
       { id:'bar', name:'Le bar', icon:'glass', sublieux: [
+          { id:'recettes-infos', name:'Recettes et infos', icon:'edit', type:'recettes' },
           { id:'nettoyage-quotidien', name:'Nettoyage quotidien', icon:'glass', type:'checklist', tasks:[
               {id:'nq-1', label:'Faire les réassorts des frigos', obligatoire:true},
               {id:'nq-2', label:'Nettoyer les inox du grand L', obligatoire:true},
@@ -1021,6 +1023,10 @@ window.storage = {
     eventsEditingId: null,
     eventsSaveError: false,
     eventFormLocations: [],
+    eventFormDate: '',
+    eventFormGroup: '',
+    eventFormGuests: '',
+    eventFormNote: '',
     cameFromManagerMenu: false,
     eventSheets: [],
     schedules: [],
@@ -1050,6 +1056,9 @@ window.storage = {
     processInfos: [],
     processInfoEditingId: null,
     processInfoViewingId: null,
+    barRecettes: [],
+    recetteEditingId: null,
+    recetteViewingId: null,
     rhUnlocked: false,
     rhEditingId: null,
     rhSaveError: false,
@@ -1117,6 +1126,10 @@ window.storage = {
     const bar = structure.categories.find(c=>c.id==='bar');
     if (bar && !(bar.sublieux.some(s=>s.id==='suivi-pertes') && bar.sublieux.some(s=>s.id==='releve-temperatures'))){
       bar.sublieux = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='bar').sublieux));
+      await window.storage.set('structure', JSON.stringify(structure), true);
+    }
+    if (bar && !bar.sublieux.some(s=>s.id==='recettes-infos')){
+      bar.sublieux.unshift({ id:'recettes-infos', name:'Recettes et infos', icon:'edit', type:'recettes' });
       await window.storage.set('structure', JSON.stringify(structure), true);
     }
     if (bar){
@@ -1552,6 +1565,17 @@ window.storage = {
       return [];
     }
   }
+  async function getBarRecettes(){
+    try {
+      const res = await window.storage.get('barRecettes', true);
+      return JSON.parse(res.value);
+    } catch(e){
+      return JSON.parse(JSON.stringify(DEFAULT_BAR_RECETTES));
+    }
+  }
+  async function saveBarRecettes(list){
+    await window.storage.set('barRecettes', JSON.stringify(list), true);
+  }
   async function getProcessInfos(){
     try {
       const res = await window.storage.get('processInfos', true);
@@ -1848,10 +1872,16 @@ window.storage = {
     }
   }
 
+  window.trackFormField = function(field, value){
+    state[field] = value;
+  };
   window.appAction = async function(action, payload){
     if (state.globalError && action !== 'dismissGlobalError'){
       state.globalError = null;
     }
+    let scrollYBefore = 0;
+    try { scrollYBefore = window.scrollY || (document.documentElement && document.documentElement.scrollTop) || 0; } catch(e){}
+    const screenBefore = state.screen;
     try {
       await appActionInner(action, payload);
     } catch(err){
@@ -1860,6 +1890,17 @@ window.storage = {
       state.isSubmitting = false;
       render();
     }
+    // Si on est resté sur le même écran (ex: on a juste déplié une catégorie ou une checklist),
+    // on remet la page exactement où elle était plutôt que de remonter en haut.
+    try {
+      if (typeof window.scrollTo === 'function'){
+        if (state.screen === screenBefore){
+          if (scrollYBefore > 0) window.scrollTo(0, scrollYBefore);
+        } else {
+          window.scrollTo(0, 0);
+        }
+      }
+    } catch(e){}
   };
 
   async function appActionInner(action, payload){
@@ -2126,6 +2167,10 @@ window.storage = {
       state.eventsEditingId = null;
       state.eventsSaveError = false;
       state.eventFormLocations = [];
+      state.eventFormDate = '';
+      state.eventFormGroup = '';
+      state.eventFormGuests = '';
+      state.eventFormNote = '';
       state.screen = 'events-form';
       render();
     }
@@ -2134,6 +2179,10 @@ window.storage = {
       state.eventsSaveError = false;
       const editingSheet = (state.eventSheets||[]).find(function(e){ return e.id === payload; });
       state.eventFormLocations = (editingSheet && editingSheet.locations) ? editingSheet.locations.slice() : [];
+      state.eventFormDate = editingSheet ? (editingSheet.date||'') : '';
+      state.eventFormGroup = editingSheet ? (editingSheet.groupName||'') : '';
+      state.eventFormGuests = editingSheet && editingSheet.guests != null ? String(editingSheet.guests) : '';
+      state.eventFormNote = editingSheet ? (editingSheet.note||'') : '';
       state.screen = 'events-form';
       render();
     }
@@ -2153,6 +2202,7 @@ window.storage = {
       if (textarea){
         const current = textarea.value.trim();
         textarea.value = current ? (current + ', ' + payload) : payload;
+        state.eventFormNote = textarea.value;
       }
     }
     else if (action === 'backEventsList'){
@@ -2162,12 +2212,14 @@ window.storage = {
     }
     else if (action === 'saveEventSheet'){
       const date = document.getElementById('event-date').value;
+      const groupName = document.getElementById('event-group').value.trim();
       const guests = document.getElementById('event-guests').value.trim();
       const note = document.getElementById('event-note').value.trim();
       const locations = (state.eventFormLocations || []).slice();
       const fileInput = document.getElementById('event-pdf-file');
       const editing = state.eventsEditingId ? (state.eventSheets||[]).find(function(e){ return e.id === state.eventsEditingId; }) : null;
-      if (!date || (!editing && (!fileInput.files || !fileInput.files[0]))){
+      state.eventFormDate = date; state.eventFormGroup = groupName; state.eventFormGuests = guests; state.eventFormNote = note;
+      if (!date){
         state.eventsSaveError = true;
         render();
         return;
@@ -2196,9 +2248,9 @@ window.storage = {
       let list = state.eventSheets || [];
       if (editing){
         editing.date = date; editing.note = note; editing.filename = filename;
-        editing.guests = guests; editing.locations = locations;
+        editing.guests = guests; editing.locations = locations; editing.groupName = groupName;
       } else {
-        list.push({ id: id, date: date, note: note, filename: filename, guests: guests, locations: locations });
+        list.push({ id: id, date: date, note: note, filename: filename, guests: guests, locations: locations, groupName: groupName });
       }
       if (newPdfDataUrl){
         await saveEventSheetPdf(id, newPdfDataUrl);
@@ -2207,6 +2259,7 @@ window.storage = {
       state.eventSheets = list;
       state.eventsEditingId = null;
       state.eventsSaveError = false;
+      state.eventFormDate = ''; state.eventFormGroup = ''; state.eventFormGuests = ''; state.eventFormNote = ''; state.eventFormLocations = [];
       state.screen = 'events-list';
       state.isSubmitting = false;
       render();
@@ -2934,12 +2987,73 @@ window.storage = {
       state.screen = 'process-infos-read';
       render();
     }
+    else if (action === 'viewRecette'){
+      state.recetteViewingId = payload;
+      render();
+    }
+    else if (action === 'backToRecettesReadList'){
+      state.recetteViewingId = null;
+      render();
+    }
     else if (action === 'viewProcessInfo'){
       state.processInfoViewingId = payload;
       render();
     }
     else if (action === 'backToProcessInfosReadList'){
       state.processInfoViewingId = null;
+      render();
+    }
+    else if (action === 'goBarRecettesEditor'){
+      state.barRecettes = await getBarRecettes();
+      state.recetteEditingId = null;
+      state.screen = 'bar-recettes-editor';
+      render();
+    }
+    else if (action === 'editRecette'){
+      state.recetteEditingId = payload;
+      render();
+    }
+    else if (action === 'backToBarRecettesList'){
+      state.recetteEditingId = null;
+      render();
+    }
+    else if (action === 'saveRecette'){
+      const title = document.getElementById('recette-title').value.trim();
+      const content = document.getElementById('recette-content').value;
+      if (!title){ render(); return; }
+      const target = state.barRecettes.find(function(p){ return p.id === state.recetteEditingId; });
+      if (target){ target.title = title; target.content = content; }
+      await saveBarRecettes(state.barRecettes);
+      state.recetteEditingId = null;
+      render();
+    }
+    else if (action === 'addRecette'){
+      const input = document.getElementById('new-recette-title');
+      const title = (input.value||'').trim();
+      if (!title){ render(); return; }
+      const list = state.barRecettes || [];
+      list.push({ id:'recette-'+Date.now(), title: title, content:'' });
+      await saveBarRecettes(list);
+      state.barRecettes = list;
+      render();
+    }
+    else if (action === 'deleteRecette'){
+      const list = (state.barRecettes||[]).filter(function(p){ return p.id !== payload; });
+      await saveBarRecettes(list);
+      state.barRecettes = list;
+      render();
+    }
+    else if (action === 'moveRecetteToPosition'){
+      const list = state.barRecettes || [];
+      const idx = list.findIndex(function(p){ return p.id === payload.id; });
+      let pos = (payload.position||1) - 1;
+      if (pos < 0) pos = 0;
+      if (pos > list.length-1) pos = list.length-1;
+      if (idx >= 0 && pos !== idx){
+        const [item] = list.splice(idx, 1);
+        list.splice(pos, 0, item);
+        await saveBarRecettes(list);
+      }
       render();
     }
     else if (action === 'goProcessInfosAdmin'){
@@ -3276,6 +3390,13 @@ window.storage = {
         state.temperatureChecklistChecked = {};
         state.temperatureChecklistError = false;
         state.screen = 'temperatures-form';
+        render();
+        return;
+      }
+      if (sub.type === 'recettes'){
+        state.barRecettes = await getBarRecettes();
+        state.recetteViewingId = null;
+        state.screen = 'recettes-read';
         render();
         return;
       }
@@ -4269,11 +4390,12 @@ window.storage = {
       out += '<div style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;align-items:center;gap:10px">'+
         '<div style="flex:1">'+
           '<div style="font-size:13px;font-weight:700;color:#7A5FE0">'+esc(dayLabelWithWeekday(sh.date))+'</div>'+
-          '<div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-top:2px">'+esc(sh.filename||'Fiche PDF')+'</div>'+
+          '<div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-top:2px">'+esc(sh.groupName || sh.filename || 'Fiche événement')+'</div>'+
+          (sh.groupName && sh.filename ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:1px">'+esc(sh.filename)+'</div>' : '')+
           (locs ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+esc(locs)+(sh.guests?' · '+esc(sh.guests)+' guests':'')+'</div>' : (sh.guests ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+esc(sh.guests)+' guests</div>' : ''))+
           (sh.note ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">'+esc(sh.note)+'</div>' : '')+
         '</div>'+
-        '<span onclick="appAction(\'viewEventPdf\',\''+sh.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('eye',16)+'</span>'+
+        (sh.filename ? '<span onclick="appAction(\'viewEventPdf\',\''+sh.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('eye',16)+'</span>' : '')+
         '<span onclick="appAction(\'editEventSheet\',\''+sh.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
         '<span onclick="appAction(\'deleteEventSheet\',\''+sh.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
       '</div>';
@@ -4292,9 +4414,11 @@ window.storage = {
     out += '<div onclick="appAction(\'backEventsList\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;margin-bottom:14px;font-size:14px">'+icon('back',18)+'<span>Retour</span></div>';
     out += '<div style="display:flex;flex-direction:column;gap:14px">';
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Date</label>'+
-      '<input id="event-date" type="date" value="'+(editing?esc(editing.date):'')+'" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px"></div>';
+      '<input id="event-date" type="date" value="'+esc(state.eventFormDate)+'" oninput="trackFormField(\'eventFormDate\', this.value)" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px"></div>';
+    out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Nom du groupe</label>'+
+      '<input id="event-group" type="text" placeholder="Ex: Anniversaire Dupont" value="'+esc(state.eventFormGroup)+'" oninput="trackFormField(\'eventFormGroup\', this.value)" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px"></div>';
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Nombre de guests</label>'+
-      '<input id="event-guests" type="number" min="0" step="1" placeholder="Ex: 25" value="'+(editing&&editing.guests!=null?esc(editing.guests):'')+'" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px"></div>';
+      '<input id="event-guests" type="number" min="0" step="1" placeholder="Ex: 25" value="'+esc(state.eventFormGuests)+'" oninput="trackFormField(\'eventFormGuests\', this.value)" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px"></div>';
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Lieu(x) de la prestation</label>'+
       '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
     allLocations.forEach(function(loc, i){
@@ -4302,18 +4426,18 @@ window.storage = {
       out += '<div id="loc-chip-'+i+'" data-loc="'+esc(loc)+'" onclick="appAction(\'toggleEventLocation\',{index:'+i+',name:\''+esc(loc)+'\'})" style="padding:8px 14px;border-radius:999px;border:2px solid var(--border-strong,#000);cursor:pointer;font-size:13px;font-weight:700;background:'+(isSelected?'#7A5FE0':'var(--surface-1)')+';color:'+(isSelected?'#fff':'var(--text-primary)')+'">'+esc(loc)+'</div>';
     });
     out += '</div></div>';
-    out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Fiche de fonction (PDF)</label>'+
+    out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Fiche de fonction (PDF, optionnel)</label>'+
       (editing && editing.filename ? '<div style="font-size:13px;color:var(--text-secondary);margin:6px 0">Fichier actuel : '+esc(editing.filename)+' — choisis un nouveau fichier pour le remplacer, sinon laisse vide.</div>' : '')+
       '<input id="event-pdf-file" type="file" accept="application/pdf" style="width:100%;box-sizing:border-box;padding:10px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:14px"></div>';
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Commentaires (optionnel)</label>'+
       '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">'+
       commentSuggestions.map(function(s){ return '<div onclick="appAction(\'suggestEventComment\',\''+esc(s)+'\')" style="padding:6px 12px;border-radius:999px;border:1.5px solid var(--border);cursor:pointer;font-size:12px;color:var(--text-secondary);background:var(--surface-0)">+ '+esc(s)+'</div>'; }).join('')+
       '</div>'+
-      '<textarea id="event-note" placeholder="Ex: contact traiteur, matériel nécessaire…" style="width:100%;box-sizing:border-box;min-height:80px;padding:12px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px;font-family:inherit;resize:vertical">'+(editing?esc(editing.note||''):'')+'</textarea></div>';
+      '<textarea id="event-note" placeholder="Ex: contact traiteur, matériel nécessaire…" oninput="trackFormField(\'eventFormNote\', this.value)" style="width:100%;box-sizing:border-box;min-height:80px;padding:12px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px;font-family:inherit;resize:vertical">'+esc(state.eventFormNote)+'</textarea></div>';
     if (state.eventsSaveError === 'pdf-too-large'){
       out += '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0">Ce fichier est trop lourd (max. environ 3,5 Mo). Essaie de le compresser ou de l\'exporter en plus basse résolution.</p>';
     } else if (state.eventsSaveError){
-      out += '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0">Merci de renseigner une date et un fichier PDF.</p>';
+      out += '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0">Merci de renseigner au moins une date.</p>';
     }
     out += '<button onclick="appAction(\'saveEventSheet\')" style="width:100%;padding:16px;border-radius:10px;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;border:2.5px solid var(--border-strong,#000);box-shadow:3px 3px 0 var(--border-strong,#000);background:#7A5FE0;color:#fff">'+(editing?'Modifier la fiche':'Ajouter la fiche')+'</button>';
     if (editing){
@@ -5205,6 +5329,47 @@ window.storage = {
     return out;
   }
 
+  function screenRecettesReadView(){
+    const list = state.barRecettes || [];
+    const viewing = state.recetteViewingId ? list.find(function(p){ return p.id === state.recetteViewingId; }) : null;
+
+    if (viewing){
+      let out = '<div style="padding:20px 16px 8px">'+
+        '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+          '<div onclick="appAction(\'backToRecettesReadList\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+          '<h1 class="mama-title" style="font-size:17px;color:var(--text-primary);margin:0;flex:1">'+esc(viewing.title)+'</h1>'+
+        '</div>'+
+      '</div>';
+      out += '<div style="padding:8px 16px">';
+      out += '<div style="padding:16px;border:2px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);font-size:14px;color:var(--text-primary);white-space:pre-wrap;line-height:1.5">'+
+        (viewing.content ? esc(viewing.content) : '<span style="color:var(--text-muted)">Contenu pas encore rempli.</span>')+
+      '</div>';
+      out += '</div>';
+      out += bottomNav('home');
+      return out;
+    }
+
+    let out = '<div style="padding:20px 16px 8px">'+
+      '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+        '<div onclick="appAction(\'goHome\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<h1 class="mama-title" style="font-size:17px;color:var(--text-primary);margin:0;flex:1">Recettes et infos</h1>'+
+      '</div>'+
+    '</div>';
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    if (list.length === 0){
+      out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucune fiche pour l\'instant.</div>';
+    }
+    list.forEach(function(p){
+      out += '<div onclick="appAction(\'viewRecette\',\''+p.id+'\')" style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;align-items:center;gap:10px;cursor:pointer">'+
+        '<div style="flex:1;font-size:15px;font-weight:700;color:var(--text-primary)">'+esc(p.title)+'</div>'+
+        icon('chevronRight',18)+
+      '</div>';
+    });
+    out += '</div>';
+    out += bottomNav('home');
+    return out;
+  }
+
   function screenProcessInfosReadView(){
     const list = state.processInfos || [];
     const viewing = state.processInfoViewingId ? list.find(function(p){ return p.id === state.processInfoViewingId; }) : null;
@@ -5321,6 +5486,59 @@ window.storage = {
       '<div class="mama-title" style="font-size:13px;color:var(--text-primary);margin-bottom:8px">Ajouter une fiche</div>'+
       '<input id="new-process-info-title" placeholder="Ex: Protocole incendie" style="width:100%;box-sizing:border-box;padding:10px;margin-bottom:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
       '<button onclick="appAction(\'addProcessInfo\')" style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:13px;font-weight:800;text-transform:uppercase;cursor:pointer">Ajouter</button>'+
+    '</div>';
+    out += bottomNav('menu');
+    return out;
+  }
+
+  function screenBarRecettesEditor(){
+    const list = state.barRecettes || [];
+    const editing = state.recetteEditingId ? list.find(function(p){ return p.id === state.recetteEditingId; }) : null;
+
+    if (editing){
+      let out = '<div style="padding:20px 16px 8px">'+
+        '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+          '<div onclick="appAction(\'backToBarRecettesList\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+          '<h1 class="mama-title" style="font-size:17px;color:var(--text-primary);margin:0;flex:1">Modifier la fiche</h1>'+
+        '</div>'+
+      '</div>';
+      out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:12px">';
+      out += '<div><label style="font-size:13px;color:var(--text-secondary);font-weight:600">Titre</label>'+
+        '<input id="recette-title" value="'+esc(editing.title)+'" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px"></div>';
+      out += '<div><label style="font-size:13px;color:var(--text-secondary);font-weight:600">Contenu</label>'+
+        '<textarea id="recette-content" placeholder="Écris ici la recette ou l\'info..." style="width:100%;box-sizing:border-box;min-height:260px;padding:12px;margin-top:6px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:14px;font-family:inherit;resize:vertical">'+esc(editing.content||'')+'</textarea></div>';
+      out += '<button onclick="appAction(\'saveRecette\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Enregistrer</button>';
+      out += '</div>';
+      out += bottomNav('menu');
+      return out;
+    }
+
+    let out = '<div style="padding:20px 16px 8px">'+
+      '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+        '<div onclick="appAction(\'goAdminMenu\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<h1 class="mama-title" style="font-size:17px;color:var(--text-primary);margin:0;flex:1">Recettes et infos</h1>'+
+      '</div>'+
+    '</div>';
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    if (list.length === 0){
+      out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucune fiche pour l\'instant.</div>';
+    }
+    list.forEach(function(p, idx){
+      out += '<div style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;align-items:center;gap:10px">'+
+        '<input type="number" min="1" max="'+list.length+'" value="'+(idx+1)+'" onchange="appAction(\'moveRecetteToPosition\', {id:\''+p.id+'\', position:parseInt(this.value,10)})" style="width:38px;padding:4px;text-align:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:12px;flex-shrink:0">'+
+        '<div onclick="appAction(\'editRecette\',\''+p.id+'\')" style="flex:1;cursor:pointer">'+
+          '<div style="font-size:15px;font-weight:700;color:var(--text-primary)">'+esc(p.title)+'</div>'+
+          (p.content ? '' : '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">Contenu à compléter</div>')+
+        '</div>'+
+        '<span onclick="appAction(\'editRecette\',\''+p.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
+        '<span onclick="appAction(\'deleteRecette\',\''+p.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
+      '</div>';
+    });
+    out += '</div>';
+    out += '<div style="padding:14px;margin:8px 16px;border:2px dashed var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1)">'+
+      '<div class="mama-title" style="font-size:13px;color:var(--text-primary);margin-bottom:8px">Ajouter une fiche</div>'+
+      '<input id="new-recette-title" placeholder="Ex: Recette Mojito" style="width:100%;box-sizing:border-box;padding:10px;margin-bottom:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
+      '<button onclick="appAction(\'addRecette\')" style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:13px;font-weight:800;text-transform:uppercase;cursor:pointer">Ajouter</button>'+
     '</div>';
     out += bottomNav('menu');
     return out;
@@ -5443,13 +5661,15 @@ window.storage = {
           const subOpen = state.adminExpandedSublieu === sub.id;
           const subClickAction = sub.type === 'requisition'
             ? "appAction('adminReqOpenEditor', {catId:'"+cat.id+"', subId:'"+sub.id+"'})"
+            : sub.type === 'recettes'
+            ? "appAction('goBarRecettesEditor')"
             : "appAction('adminToggleSublieu','"+sub.id+"')";
           out += '<div style="border:1.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);overflow:hidden">';
           out += '<div onclick="'+subClickAction+'" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer">'+
             '<div style="flex:1;font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(sub.name)+
             '</div>'+
-            '<div onclick="event.stopPropagation();appAction(\'deleteSublieu\', {catId:\''+cat.id+'\', subId:\''+sub.id+'\'})" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',14)+'</div>'+
-            (sub.type === 'requisition' ? icon('chevronRight',16) : '<div style="color:var(--text-muted);transform:rotate('+(subOpen?'180':'0')+'deg)">'+icon('chevronDown',16)+'</div>')+
+            (sub.type === 'recettes' ? '' : '<div onclick="event.stopPropagation();appAction(\'deleteSublieu\', {catId:\''+cat.id+'\', subId:\''+sub.id+'\'})" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',14)+'</div>')+
+            (sub.type === 'requisition' || sub.type === 'recettes' ? icon('chevronRight',16) : '<div style="color:var(--text-muted);transform:rotate('+(subOpen?'180':'0')+'deg)">'+icon('chevronDown',16)+'</div>')+
           '</div>';
 
           if (subOpen){
@@ -5560,7 +5780,9 @@ window.storage = {
     else if (state.screen === 'access-management') html = screenAccessManagement();
     else if (state.screen === 'admin-requisition-editor') html = screenAdminRequisitionEditor();
     else if (state.screen === 'process-infos') html = screenProcessInfos();
+    else if (state.screen === 'bar-recettes-editor') html = screenBarRecettesEditor();
     else if (state.screen === 'process-infos-read') html = screenProcessInfosReadView();
+    else if (state.screen === 'recettes-read') html = screenRecettesReadView();
     else if (state.screen === 'admin-menu') html = screenAdminMenu();
     else if (state.screen === 'mama-gang-management') html = screenMamaGangManagement();
     else if (state.screen === 'historique') html = screenHistorique();
