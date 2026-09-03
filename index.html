@@ -1024,6 +1024,11 @@ window.storage = {
     eventsSaveError: false,
     eventFormLocations: [],
     eventFormDate: '',
+    eventFormTime: '',
+    eventFormPrestations: [],
+    prestationDraftTime: '',
+    prestationDraftZone: '',
+    prestationDraftInfo: '',
     eventFormGroup: '',
     eventFormGuests: '',
     eventFormNote: '',
@@ -1620,7 +1625,33 @@ window.storage = {
         if (counts[r] !== undefined && (!f.readBy || !f.readBy[r])) counts[r]++;
       });
     });
+    await saveFeedbackCountsCache(counts);
     return counts;
+  }
+  // Cache léger des compteurs de remontées non lues : évite de retélécharger tout
+  // l'historique (photos comprises) juste pour afficher un badge à chaque connexion.
+  async function getFeedbackCountsCache(){
+    try {
+      const res = await window.storage.get('feedbackCountsCache', true);
+      return JSON.parse(res.value);
+    } catch(e){
+      return await computeFeedbackCounts();
+    }
+  }
+  async function saveFeedbackCountsCache(counts){
+    await window.storage.set('feedbackCountsCache', JSON.stringify(counts), true);
+  }
+  async function incrementFeedbackCounts(categories){
+    const counts = await getFeedbackCountsCache();
+    categories.forEach(function(c){
+      if (counts[c] !== undefined) counts[c]++;
+    });
+    await saveFeedbackCountsCache(counts);
+  }
+  async function resetFeedbackCount(category){
+    const counts = await getFeedbackCountsCache();
+    if (counts[category] !== undefined) counts[category] = 0;
+    await saveFeedbackCountsCache(counts);
   }
   function renderFeedbackButton(category, color, fg){
     const count = state.feedbackCounts && state.feedbackCounts[category] ? state.feedbackCounts[category] : 0;
@@ -1969,7 +2000,7 @@ window.storage = {
       const input = document.getElementById('manager-login-code');
       const code = (input.value||'').trim();
       const usersPromise = getAccessUsers();
-      const feedbackPromise = computeFeedbackCounts();
+      const feedbackPromise = getFeedbackCountsCache();
       const users = await usersPromise;
       const match = findAccessUser(users, 'manager', code);
       if (match){
@@ -1995,7 +2026,7 @@ window.storage = {
       if (!n){ nameInput.focus(); return; }
       state.name = n;
       state.managerUnlocked = true;
-      state.feedbackCounts = await computeFeedbackCounts();
+      state.feedbackCounts = await getFeedbackCountsCache();
       state.screen = 'manager-menu';
       render();
     }
@@ -2008,7 +2039,7 @@ window.storage = {
         state.economeLoginCodeError = false;
         state.economeUnlocked = true;
         if (matchE) state.name = matchE.name;
-        const [requisitions, feedbackCounts] = await Promise.all([getRequisitions(), computeFeedbackCounts()]);
+        const [requisitions, feedbackCounts] = await Promise.all([getRequisitions(), getFeedbackCountsCache()]);
         state.requisitions = requisitions;
         state.feedbackCounts = feedbackCounts;
         state.economeDay = null;
@@ -2028,7 +2059,7 @@ window.storage = {
         state.entertainmentLoginCodeError = false;
         state.entertainmentUnlocked = true;
         if (matchEnt) state.name = matchEnt.name;
-        const [events, feedbackCounts] = await Promise.all([getEvents(), computeFeedbackCounts()]);
+        const [events, feedbackCounts] = await Promise.all([getEvents(), getFeedbackCountsCache()]);
         state.events = events;
         state.feedbackCounts = feedbackCounts;
         state.entertainmentEditingId = null;
@@ -2047,7 +2078,7 @@ window.storage = {
         state.eventsLoginCodeError = false;
         state.eventsUnlocked = true;
         if (matchEv) state.name = matchEv.name;
-        const [eventSheets, feedbackCounts] = await Promise.all([getEventSheets(), computeFeedbackCounts()]);
+        const [eventSheets, feedbackCounts] = await Promise.all([getEventSheets(), getFeedbackCountsCache()]);
         state.eventSheets = eventSheets;
         state.feedbackCounts = feedbackCounts;
         state.eventsEditingId = null;
@@ -2067,7 +2098,7 @@ window.storage = {
         state.rhLoginCodeError = false;
         state.rhUnlocked = true;
         if (matchRh) state.name = matchRh.name;
-        const [rhEvents, feedbackCounts] = await Promise.all([getRhEvents(), computeFeedbackCounts()]);
+        const [rhEvents, feedbackCounts] = await Promise.all([getRhEvents(), getFeedbackCountsCache()]);
         state.rhEvents = rhEvents;
         state.feedbackCounts = feedbackCounts;
         state.rhEditingId = null;
@@ -2096,8 +2127,8 @@ window.storage = {
             if (!f.readBy.technique){ f.readBy.technique = true; changed = true; }
           }
         });
-        if (changed){ await saveFeedbacks(list); }
-        state.feedbackCounts = await computeFeedbackCounts();
+        if (changed){ await saveFeedbacks(list); await resetFeedbackCount('technique'); }
+        state.feedbackCounts = await getFeedbackCountsCache();
         state.screen = 'view-feedbacks';
       } else {
         state.techniqueLoginCodeError = true;
@@ -2168,9 +2199,14 @@ window.storage = {
       state.eventsSaveError = false;
       state.eventFormLocations = [];
       state.eventFormDate = '';
+      state.eventFormTime = '';
       state.eventFormGroup = '';
       state.eventFormGuests = '';
       state.eventFormNote = '';
+      state.eventFormPrestations = [];
+      state.prestationDraftTime = '';
+      state.prestationDraftZone = '';
+      state.prestationDraftInfo = '';
       state.screen = 'events-form';
       render();
     }
@@ -2180,10 +2216,38 @@ window.storage = {
       const editingSheet = (state.eventSheets||[]).find(function(e){ return e.id === payload; });
       state.eventFormLocations = (editingSheet && editingSheet.locations) ? editingSheet.locations.slice() : [];
       state.eventFormDate = editingSheet ? (editingSheet.date||'') : '';
+      state.eventFormTime = editingSheet ? (editingSheet.time||'') : '';
       state.eventFormGroup = editingSheet ? (editingSheet.groupName||'') : '';
       state.eventFormGuests = editingSheet && editingSheet.guests != null ? String(editingSheet.guests) : '';
       state.eventFormNote = editingSheet ? (editingSheet.note||'') : '';
+      if (editingSheet && editingSheet.prestations){
+        state.eventFormPrestations = editingSheet.prestations.slice();
+      } else if (editingSheet && editingSheet.locations && editingSheet.locations.length){
+        // Compatibilité avec les anciennes fiches (lieux multiples + heure unique)
+        state.eventFormPrestations = editingSheet.locations.map(function(loc){ return { time: editingSheet.time||'', zone: loc, info:'' }; });
+      } else {
+        state.eventFormPrestations = [];
+      }
+      state.prestationDraftTime = '';
+      state.prestationDraftZone = '';
+      state.prestationDraftInfo = '';
       state.screen = 'events-form';
+      render();
+    }
+    else if (action === 'addPrestation'){
+      const zone = document.getElementById('prestation-zone').value;
+      if (!zone){ render(); return; }
+      const time = document.getElementById('prestation-time').value;
+      const info = document.getElementById('prestation-info').value.trim();
+      state.eventFormPrestations = state.eventFormPrestations || [];
+      state.eventFormPrestations.push({ time: time, zone: zone, info: info });
+      state.prestationDraftTime = '';
+      state.prestationDraftZone = '';
+      state.prestationDraftInfo = '';
+      render();
+    }
+    else if (action === 'deletePrestation'){
+      state.eventFormPrestations = (state.eventFormPrestations||[]).filter(function(p, i){ return i !== payload; });
       render();
     }
     else if (action === 'toggleEventLocation'){
@@ -2215,7 +2279,7 @@ window.storage = {
       const groupName = document.getElementById('event-group').value.trim();
       const guests = document.getElementById('event-guests').value.trim();
       const note = document.getElementById('event-note').value.trim();
-      const locations = (state.eventFormLocations || []).slice();
+      const prestations = (state.eventFormPrestations || []).slice();
       const fileInput = document.getElementById('event-pdf-file');
       const editing = state.eventsEditingId ? (state.eventSheets||[]).find(function(e){ return e.id === state.eventsEditingId; }) : null;
       state.eventFormDate = date; state.eventFormGroup = groupName; state.eventFormGuests = guests; state.eventFormNote = note;
@@ -2248,9 +2312,10 @@ window.storage = {
       let list = state.eventSheets || [];
       if (editing){
         editing.date = date; editing.note = note; editing.filename = filename;
-        editing.guests = guests; editing.locations = locations; editing.groupName = groupName;
+        editing.guests = guests; editing.prestations = prestations; editing.groupName = groupName;
+        delete editing.locations; delete editing.time;
       } else {
-        list.push({ id: id, date: date, note: note, filename: filename, guests: guests, locations: locations, groupName: groupName });
+        list.push({ id: id, date: date, note: note, filename: filename, guests: guests, prestations: prestations, groupName: groupName });
       }
       if (newPdfDataUrl){
         await saveEventSheetPdf(id, newPdfDataUrl);
@@ -2259,7 +2324,7 @@ window.storage = {
       state.eventSheets = list;
       state.eventsEditingId = null;
       state.eventsSaveError = false;
-      state.eventFormDate = ''; state.eventFormGroup = ''; state.eventFormGuests = ''; state.eventFormNote = ''; state.eventFormLocations = [];
+      state.eventFormDate = ''; state.eventFormGroup = ''; state.eventFormGuests = ''; state.eventFormNote = ''; state.eventFormLocations = []; state.eventFormPrestations = [];
       state.screen = 'events-list';
       state.isSubmitting = false;
       render();
@@ -2927,6 +2992,7 @@ window.storage = {
         when: nowLabel()
       });
       await saveFeedbacks(list.slice(0,2000));
+      await incrementFeedbackCounts(recipientsList);
       state.feedbackSent = true;
       state.feedbackError = false;
       state.remonteeMessageDraft = '';
@@ -2947,7 +3013,8 @@ window.storage = {
       if (changed){
         await saveFeedbacks(list);
       }
-      state.feedbackCounts = await computeFeedbackCounts();
+      await resetFeedbackCount(payload);
+      state.feedbackCounts = await getFeedbackCountsCache();
       state.screen = 'view-feedbacks';
       render();
     }
@@ -2978,7 +3045,7 @@ window.storage = {
       }
       await saveFeedbacks(list);
       state.feedbacksList = list;
-      state.feedbackCounts = await computeFeedbackCounts();
+      state.feedbackCounts = await getFeedbackCountsCache();
       render();
     }
     else if (action === 'goProcessInfosRead'){
@@ -4386,13 +4453,15 @@ window.storage = {
       out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucune fiche de fonction pour l\'instant.</div>';
     }
     sheets.forEach(function(sh){
-      const locs = (sh.locations && sh.locations.length) ? sh.locations.join(', ') : '';
+      const prestationsSummary = (sh.prestations && sh.prestations.length)
+        ? sh.prestations.map(function(p){ return (p.time?p.time+' ':'')+p.zone; }).join(' · ')
+        : ((sh.locations && sh.locations.length) ? sh.locations.join(', ') : '');
       out += '<div style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;align-items:center;gap:10px">'+
         '<div style="flex:1">'+
           '<div style="font-size:13px;font-weight:700;color:#7A5FE0">'+esc(dayLabelWithWeekday(sh.date))+'</div>'+
           '<div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-top:2px">'+esc(sh.groupName || sh.filename || 'Fiche événement')+'</div>'+
           (sh.groupName && sh.filename ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:1px">'+esc(sh.filename)+'</div>' : '')+
-          (locs ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+esc(locs)+(sh.guests?' · '+esc(sh.guests)+' guests':'')+'</div>' : (sh.guests ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+esc(sh.guests)+' guests</div>' : ''))+
+          (prestationsSummary ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+esc(prestationsSummary)+(sh.guests?' · '+esc(sh.guests)+' guests':'')+'</div>' : (sh.guests ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+esc(sh.guests)+' guests</div>' : ''))+
           (sh.note ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">'+esc(sh.note)+'</div>' : '')+
         '</div>'+
         (sh.filename ? '<span onclick="appAction(\'viewEventPdf\',\''+sh.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('eye',16)+'</span>' : '')+
@@ -4407,8 +4476,8 @@ window.storage = {
   function screenEventsForm(){
     const editing = state.eventsEditingId ? (state.eventSheets||[]).find(function(e){ return e.id === state.eventsEditingId; }) : null;
     const allLocations = ['Atelier 1','Atelier 2','Big','Cinémama','Roof','Terrasse','Restaurant','Patio','Room 122','Room 222'];
-    const selectedLocations = editing && editing.locations ? editing.locations : [];
     const commentSuggestions = ['Jarre de cocktails','Bon open bar'];
+    const prestations = state.eventFormPrestations || [];
     let out = eventsHeader();
     out += '<div style="padding:8px 16px">';
     out += '<div onclick="appAction(\'backEventsList\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;margin-bottom:14px;font-size:14px">'+icon('back',18)+'<span>Retour</span></div>';
@@ -4419,13 +4488,36 @@ window.storage = {
       '<input id="event-group" type="text" placeholder="Ex: Anniversaire Dupont" value="'+esc(state.eventFormGroup)+'" oninput="trackFormField(\'eventFormGroup\', this.value)" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px"></div>';
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Nombre de guests</label>'+
       '<input id="event-guests" type="number" min="0" step="1" placeholder="Ex: 25" value="'+esc(state.eventFormGuests)+'" oninput="trackFormField(\'eventFormGuests\', this.value)" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px"></div>';
-    out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Lieu(x) de la prestation</label>'+
-      '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
-    allLocations.forEach(function(loc, i){
-      const isSelected = selectedLocations.indexOf(loc) >= 0;
-      out += '<div id="loc-chip-'+i+'" data-loc="'+esc(loc)+'" onclick="appAction(\'toggleEventLocation\',{index:'+i+',name:\''+esc(loc)+'\'})" style="padding:8px 14px;border-radius:999px;border:2px solid var(--border-strong,#000);cursor:pointer;font-size:13px;font-weight:700;background:'+(isSelected?'#7A5FE0':'var(--surface-1)')+';color:'+(isSelected?'#fff':'var(--text-primary)')+'">'+esc(loc)+'</div>';
-    });
-    out += '</div></div>';
+
+    out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Prestations</label>';
+    if (prestations.length === 0){
+      out += '<div style="margin-top:8px;padding:12px;border-radius:8px;background:var(--surface-0);color:var(--text-muted);font-size:13px;text-align:center">Aucune prestation ajoutée pour l\'instant.</div>';
+    } else {
+      out += '<div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">';
+      prestations.forEach(function(p, i){
+        out += '<div style="display:flex;align-items:flex-start;gap:10px;padding:12px;border:2px solid var(--border-strong,var(--border));border-radius:8px;background:var(--surface-1)">'+
+          '<div style="flex:1">'+
+            '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+(p.time?esc(p.time)+' — ':'')+esc(p.zone)+'</div>'+
+            (p.info ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">'+esc(p.info)+'</div>' : '')+
+          '</div>'+
+          '<span onclick="appAction(\'deletePrestation\','+i+')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',15)+'</span>'+
+        '</div>';
+      });
+      out += '</div>';
+    }
+    out += '<div style="margin-top:10px;padding:12px;border:2px dashed var(--border-strong,var(--border));border-radius:8px;background:var(--surface-0)">'+
+      '<div style="display:flex;gap:8px;margin-bottom:8px">'+
+        '<input id="prestation-time" type="time" value="'+esc(state.prestationDraftTime)+'" oninput="trackFormField(\'prestationDraftTime\', this.value)" style="flex:1;box-sizing:border-box;padding:10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px">'+
+        '<select id="prestation-zone" onchange="trackFormField(\'prestationDraftZone\', this.value)" style="flex:1;box-sizing:border-box;padding:10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px">'+
+          '<option value="">Zone…</option>'+
+          allLocations.map(function(loc){ return '<option value="'+esc(loc)+'" '+(state.prestationDraftZone===loc?'selected':'')+'>'+esc(loc)+'</option>'; }).join('')+
+        '</select>'+
+      '</div>'+
+      '<input id="prestation-info" type="text" placeholder="Info particulière (optionnel)" value="'+esc(state.prestationDraftInfo)+'" oninput="trackFormField(\'prestationDraftInfo\', this.value)" style="width:100%;box-sizing:border-box;padding:10px;margin-bottom:8px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px">'+
+      '<button onclick="appAction(\'addPrestation\')" style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:#7A5FE0;color:#fff;font-size:13px;font-weight:800;text-transform:uppercase;cursor:pointer">+ Ajouter une prestation</button>'+
+    '</div>';
+    out += '</div>';
+
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Fiche de fonction (PDF, optionnel)</label>'+
       (editing && editing.filename ? '<div style="font-size:13px;color:var(--text-secondary);margin:6px 0">Fichier actuel : '+esc(editing.filename)+' — choisis un nouveau fichier pour le remplacer, sinon laisse vide.</div>' : '')+
       '<input id="event-pdf-file" type="file" accept="application/pdf" style="width:100%;box-sizing:border-box;padding:10px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:14px"></div>';
