@@ -93,6 +93,15 @@ window.storage = {
 
 (function(){
   const DEFAULT_BAR_RECETTES = [];
+  const ALLERGENES_LIST = ['Gluten','Crustacés','Œufs','Poissons','Arachides','Soja','Lait','Fruits à coque','Céleri','Moutarde','Graines de sésame','Sulfites','Lupin','Mollusques'];
+  const DEFAULT_ALLERGENES_MENU = {
+    categories: [
+      { id:'entrees-tapas', name:'Entrées / Tapas', items:[] },
+      { id:'plats', name:'Plats', items:[] },
+      { id:'desserts', name:'Desserts', items:[] },
+      { id:'menu-groupe', name:'Menu groupe', items:[] }
+    ]
+  };
   const DEFAULT_PROCESS_INFOS = [
     { id:'proc-1', title:'Accident de travail', content:'' },
     { id:'proc-2', title:'Mise en place du petit déjeuner', content:'' },
@@ -1072,6 +1081,11 @@ window.storage = {
     barRecettes: [],
     recetteEditingId: null,
     recetteViewingId: null,
+    allergenesMenu: null,
+    allergeneEditingId: null,
+    newAllergeneNameDraft: '',
+    newAllergeneCategoryDraft: '',
+    newAllergeneAllergenesDraft: [],
     rhUnlocked: false,
     rhEditingId: null,
     rhSaveError: false,
@@ -1625,6 +1639,17 @@ window.storage = {
       return JSON.parse(JSON.stringify(DEFAULT_BAR_RECETTES));
     }
   }
+  async function getAllergenesMenu(){
+    try {
+      const res = await window.storage.get('allergenesMenu', true);
+      return JSON.parse(res.value);
+    } catch(e){
+      return JSON.parse(JSON.stringify(DEFAULT_ALLERGENES_MENU));
+    }
+  }
+  async function saveAllergenesMenu(menu){
+    await window.storage.set('allergenesMenu', JSON.stringify(menu), true);
+  }
   async function saveBarRecettes(list){
     await window.storage.set('barRecettes', JSON.stringify(list), true);
   }
@@ -1865,6 +1890,9 @@ window.storage = {
       if (state.screen === 'entertainment-form' && state.entertainmentUnlocked){
         state.events = await getEvents();
       }
+      if (state.screen === 'allergenes-admin' && state.adminUnlocked){
+        state.allergenesMenu = await getAllergenesMenu();
+      }
       return true;
     } catch(e){ return false; }
   }
@@ -2010,6 +2038,13 @@ window.storage = {
     }
   }
 
+  window.toggleNewAllergeneDraft = function(allergene, checked){
+    state.newAllergeneAllergenesDraft = state.newAllergeneAllergenesDraft || [];
+    const idx = state.newAllergeneAllergenesDraft.indexOf(allergene);
+    if (checked && idx < 0) state.newAllergeneAllergenesDraft.push(allergene);
+    if (!checked && idx >= 0) state.newAllergeneAllergenesDraft.splice(idx, 1);
+    persistSessionSnapshot();
+  };
   window.trackFormField = function(field, value){
     state[field] = value;
     persistSessionSnapshot();
@@ -3185,6 +3220,90 @@ window.storage = {
     }
     else if (action === 'backToProcessInfosReadList'){
       state.processInfoViewingId = null;
+      render();
+    }
+    else if (action === 'goAllergenesAdmin'){
+      if (state.adminUnlocked){
+        state.allergenesMenu = await getAllergenesMenu();
+        state.allergeneEditingId = null;
+        state.screen = 'allergenes-admin';
+      } else {
+        state.lockedFor = 'admin-access';
+        state.screen = 'manager-locked';
+      }
+      render();
+    }
+    else if (action === 'editAllergeneItem'){
+      state.allergeneEditingId = payload;
+      render();
+    }
+    else if (action === 'backToAllergenesList'){
+      state.allergeneEditingId = null;
+      render();
+    }
+    else if (action === 'addAllergeneItem'){
+      if (!state.allergenesMenu) state.allergenesMenu = await getAllergenesMenu();
+      const nameInput = document.getElementById('new-allergene-name');
+      const name = (nameInput.value||'').trim();
+      const catId = document.getElementById('new-allergene-category').value;
+      if (!name) { render(); return; }
+      const cat = state.allergenesMenu.categories.find(function(c){ return c.id === catId; });
+      if (cat) cat.items.push({ id:'aitem-'+Date.now(), name: name, allergenes: (state.newAllergeneAllergenesDraft||[]).slice() });
+      await saveAllergenesMenu(state.allergenesMenu);
+      state.newAllergeneNameDraft = '';
+      state.newAllergeneAllergenesDraft = [];
+      render();
+    }
+    else if (action === 'saveAllergeneItem'){
+      if (!state.allergenesMenu) state.allergenesMenu = await getAllergenesMenu();
+      const name = document.getElementById('allergene-item-name').value.trim();
+      const newCatId = document.getElementById('allergene-item-category').value;
+      if (!name){ render(); return; }
+      let target = null, currentCat = null;
+      for (const cat of state.allergenesMenu.categories){
+        const idx = cat.items.findIndex(function(it){ return it.id === state.allergeneEditingId; });
+        if (idx >= 0){ target = cat.items[idx]; currentCat = cat; break; }
+      }
+      if (target){
+        const checkboxes = document.querySelectorAll ? document.querySelectorAll('[data-allergene-item]') : [];
+        const selected = [];
+        for (let i=0; i<checkboxes.length; i++){
+          if (checkboxes[i].checked) selected.push(checkboxes[i].getAttribute('data-allergene-item'));
+        }
+        target.name = name;
+        target.allergenes = selected;
+        if (currentCat.id !== newCatId){
+          currentCat.items = currentCat.items.filter(function(it){ return it.id !== target.id; });
+          const destCat = state.allergenesMenu.categories.find(function(c){ return c.id === newCatId; });
+          if (destCat) destCat.items.push(target);
+        }
+        await saveAllergenesMenu(state.allergenesMenu);
+      }
+      state.allergeneEditingId = null;
+      render();
+    }
+    else if (action === 'deleteAllergeneItem'){
+      if (!state.allergenesMenu) state.allergenesMenu = await getAllergenesMenu();
+      state.allergenesMenu.categories.forEach(function(cat){
+        cat.items = cat.items.filter(function(it){ return it.id !== payload; });
+      });
+      await saveAllergenesMenu(state.allergenesMenu);
+      state.allergeneEditingId = null;
+      render();
+    }
+    else if (action === 'moveAllergeneItemToPosition'){
+      if (!state.allergenesMenu) state.allergenesMenu = await getAllergenesMenu();
+      const cat = state.allergenesMenu.categories.find(function(c){ return c.id === payload.catId; });
+      if (cat){
+        let pos = (payload.position||1) - 1;
+        if (pos < 0) pos = 0;
+        if (pos > cat.items.length-1) pos = cat.items.length-1;
+        if (pos !== payload.index){
+          const [item] = cat.items.splice(payload.index, 1);
+          cat.items.splice(pos, 0, item);
+          await saveAllergenesMenu(state.allergenesMenu);
+        }
+      }
       render();
     }
     else if (action === 'goBarRecettesEditor'){
@@ -4954,6 +5073,10 @@ window.storage = {
       '<div style="width:42px;height:42px;flex-shrink:0;border-radius:10px;border:2px solid var(--border-strong,#000);background:#fff;color:#7A5FE0;display:flex;align-items:center;justify-content:center">'+icon('edit',22)+'</div>'+
       '<div class="mama-title" style="font-size:15px;color:#fff">Modifier une fiche (Process & Infos)</div>'+
     '</button>';
+    out += '<button onclick="appAction(\'goAllergenesAdmin\')" style="display:flex;align-items:center;gap:14px;padding:18px;border-radius:14px;border:2.5px solid var(--border-strong,#000);background:#3FAE6A;color:#fff;cursor:pointer;text-align:left;box-shadow:4px 4px 0 var(--border-strong,#000)">'+
+      '<div style="width:42px;height:42px;flex-shrink:0;border-radius:10px;border:2px solid var(--border-strong,#000);background:#fff;color:#3FAE6A;display:flex;align-items:center;justify-content:center">'+icon('edit',22)+'</div>'+
+      '<div class="mama-title" style="font-size:15px;color:#fff">Gérer les allergènes</div>'+
+    '</button>';
     out += '</div>';
     out += '<div style="padding:8px 16px"><button onclick="appAction(\'logout\')" style="width:100%;padding:12px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:14px;cursor:pointer">Se déconnecter</button></div>';
     return out;
@@ -5726,6 +5849,94 @@ window.storage = {
     return out;
   }
 
+  function screenAllergenesAdmin(){
+    const menu = state.allergenesMenu || DEFAULT_ALLERGENES_MENU;
+    const editing = state.allergeneEditingId
+      ? (function(){
+          for (const cat of menu.categories){
+            const item = cat.items.find(function(it){ return it.id === state.allergeneEditingId; });
+            if (item) return { item: item, catId: cat.id };
+          }
+          return null;
+        })()
+      : null;
+
+    if (editing){
+      let out = '<div style="padding:20px 16px 8px">'+
+        '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+          '<div onclick="appAction(\'backToAllergenesList\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+          '<h1 class="mama-title" style="font-size:17px;color:var(--text-primary);margin:0;flex:1">Modifier l\'article</h1>'+
+        '</div>'+
+      '</div>';
+      out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:14px">';
+      out += '<div><label style="font-size:13px;color:var(--text-secondary);font-weight:600">Nom du plat</label>'+
+        '<input id="allergene-item-name" value="'+esc(editing.item.name)+'" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px"></div>';
+      out += '<div><label style="font-size:13px;color:var(--text-secondary);font-weight:600">Catégorie</label>'+
+        '<select id="allergene-item-category" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px">'+
+          menu.categories.map(function(c){ return '<option value="'+c.id+'" '+(c.id===editing.catId?'selected':'')+'>'+esc(c.name)+'</option>'; }).join('')+
+        '</select></div>';
+      out += '<div><label style="font-size:13px;color:var(--text-secondary);font-weight:600">Allergènes</label>'+
+        '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">'+
+        ALLERGENES_LIST.map(function(a){
+          const checked = (editing.item.allergenes||[]).indexOf(a) >= 0;
+          return '<label style="display:flex;align-items:center;gap:4px;font-size:12px;padding:6px 10px;border-radius:999px;border:1.5px solid var(--border);background:'+(checked?'var(--bg-danger,#FCEBEB)':'var(--surface-0)')+';color:'+(checked?'var(--text-danger,#A32D2D)':'var(--text-secondary)')+';cursor:pointer">'+
+            '<input type="checkbox" data-allergene-item="'+esc(a)+'" '+(checked?'checked':'')+' style="width:13px;height:13px;margin:0">'+esc(a)+
+          '</label>';
+        }).join('')+
+        '</div></div>';
+      out += '<button onclick="appAction(\'saveAllergeneItem\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Enregistrer</button>';
+      out += '<button onclick="appAction(\'deleteAllergeneItem\',\''+editing.item.id+'\')" style="width:100%;padding:12px;border-radius:10px;font-size:14px;cursor:pointer;border:none;background:none;color:var(--text-danger,#A32D2D)">Supprimer cet article</button>';
+      out += '</div>';
+      out += bottomNav('menu');
+      return out;
+    }
+
+    let out = '<div style="padding:20px 16px 8px">'+
+      '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+        '<div onclick="appAction(\'goAdminMenu\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<h1 class="mama-title" style="font-size:17px;color:var(--text-primary);margin:0;flex:1">Gérer les allergènes</h1>'+
+      '</div>'+
+    '</div>';
+    out += '<div style="padding:14px 16px;margin:8px 16px 0;border:2px dashed var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1)">'+
+      '<div class="mama-title" style="font-size:13px;color:var(--text-primary);margin-bottom:8px">Ajouter un article</div>'+
+      '<input id="new-allergene-name" placeholder="Ex: Burrata, tomates confites" value="'+esc(state.newAllergeneNameDraft)+'" oninput="trackFormField(\'newAllergeneNameDraft\', this.value)" style="width:100%;box-sizing:border-box;padding:10px;margin-bottom:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
+      '<select id="new-allergene-category" onchange="trackFormField(\'newAllergeneCategoryDraft\', this.value)" style="width:100%;box-sizing:border-box;padding:10px;margin-bottom:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
+        menu.categories.map(function(c){ return '<option value="'+c.id+'" '+((state.newAllergeneCategoryDraft||menu.categories[0].id)===c.id?'selected':'')+'>'+esc(c.name)+'</option>'; }).join('')+
+      '</select>'+
+      '<label style="font-size:12px;color:var(--text-secondary);font-weight:600">Allergènes</label>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 10px">'+
+      ALLERGENES_LIST.map(function(a){
+        const checked = (state.newAllergeneAllergenesDraft||[]).indexOf(a) >= 0;
+        return '<label style="display:flex;align-items:center;gap:4px;font-size:12px;padding:6px 10px;border-radius:999px;border:1.5px solid var(--border);background:'+(checked?'var(--bg-danger,#FCEBEB)':'var(--surface-0)')+';color:'+(checked?'var(--text-danger,#A32D2D)':'var(--text-secondary)')+';cursor:pointer">'+
+          '<input type="checkbox" data-new-allergene="'+esc(a)+'" '+(checked?'checked':'')+' onchange="toggleNewAllergeneDraft(\''+esc(a)+'\', this.checked)" style="width:13px;height:13px;margin:0">'+esc(a)+
+        '</label>';
+      }).join('')+
+      '</div>'+
+      '<button onclick="appAction(\'addAllergeneItem\')" style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:13px;font-weight:800;text-transform:uppercase;cursor:pointer">Ajouter l\'article</button>'+
+    '</div>';
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    menu.categories.forEach(function(cat){
+      out += '<div class="mama-title" style="font-size:14px;color:var(--text-accent,#E8432B);margin-top:6px">'+esc(cat.name)+' ('+cat.items.length+')</div>';
+      if (cat.items.length === 0){
+        out += '<div style="padding:12px;color:var(--text-muted);font-size:13px;text-align:center;background:var(--surface-0);border-radius:8px">Aucun article pour l\'instant.</div>';
+      }
+      cat.items.forEach(function(it, idx){
+        out += '<div style="padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
+          '<input type="number" min="1" max="'+cat.items.length+'" value="'+(idx+1)+'" onchange="appAction(\'moveAllergeneItemToPosition\', {catId:\''+cat.id+'\', index:'+idx+', position:parseInt(this.value,10)})" style="width:36px;padding:4px;text-align:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:12px;flex-shrink:0">'+
+          '<div onclick="appAction(\'editAllergeneItem\',\''+it.id+'\')" style="flex:1;cursor:pointer">'+
+            '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(it.name)+'</div>'+
+            (it.allergenes && it.allergenes.length ? '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">'+esc(it.allergenes.join(', '))+'</div>' : '')+
+          '</div>'+
+          '<span onclick="appAction(\'editAllergeneItem\',\''+it.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',15)+'</span>'+
+          '<span onclick="appAction(\'deleteAllergeneItem\',\''+it.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',15)+'</span>'+
+        '</div>';
+      });
+    });
+    out += '</div>';
+    out += bottomNav('menu');
+    return out;
+  }
+
   function screenBarRecettesEditor(){
     const list = state.barRecettes || [];
     const editing = state.recetteEditingId ? list.find(function(p){ return p.id === state.recetteEditingId; }) : null;
@@ -6016,6 +6227,7 @@ window.storage = {
     else if (state.screen === 'admin-requisition-editor') html = screenAdminRequisitionEditor();
     else if (state.screen === 'process-infos') html = screenProcessInfos();
     else if (state.screen === 'bar-recettes-editor') html = screenBarRecettesEditor();
+    else if (state.screen === 'allergenes-admin') html = screenAllergenesAdmin();
     else if (state.screen === 'process-infos-read') html = screenProcessInfosReadView();
     else if (state.screen === 'recettes-read') html = screenRecettesReadView();
     else if (state.screen === 'admin-menu') html = screenAdminMenu();
@@ -6061,7 +6273,66 @@ window.storage = {
     }
   }
 
-  init();
+  async function renderPublicAllergenesPage(){
+    const root = document.getElementById('app');
+    const menu = await getAllergenesMenu();
+    let out = '<div style="padding:28px 16px 8px;text-align:center">'+
+      '<div class="copilote-script" style="font-size:34px">Copilote</div>'+
+      '<img src="'+LOGO_URI+'" alt="Mama Shelter Toulouse" style="width:70px;height:70px;object-fit:contain;display:block;margin:6px auto 0">'+
+      '<h1 class="mama-title" style="font-size:18px;margin:14px 0 2px;color:var(--text-primary)">Allergènes</h1>'+
+      '<p style="color:var(--text-secondary);font-size:13px;margin:0">La carte et les allergènes présents dans nos plats</p>'+
+    '</div>';
+    out += '<div style="padding:8px 16px 0">'+
+      '<input id="pub-allergenes-search" type="text" placeholder="Rechercher un plat…" oninput="filterPublicAllergenesMenu(this.value)" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px">'+
+    '</div>';
+    out += '<div id="pub-allergenes-list" style="padding:8px 16px 24px;display:flex;flex-direction:column;gap:10px">';
+    menu.categories.forEach(function(cat){
+      out += '<div class="pub-allergene-cat" data-cat="'+cat.id+'" style="'+(cat.items.length===0?'display:none':'')+'">';
+      out += '<div class="mama-title" style="font-size:16px;color:var(--text-accent,#E8432B);margin:10px 0 6px">'+esc(cat.name)+'</div>';
+      cat.items.forEach(function(it){
+        out += '<div class="pub-allergene-item" data-name="'+esc(it.name.toLowerCase())+'" style="padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);margin-bottom:8px">'+
+          '<div style="font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(it.name)+'</div>'+
+          ((it.allergenes && it.allergenes.length) ?
+            '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px">'+it.allergenes.map(function(a){
+              return '<span style="font-size:11px;padding:3px 9px;border-radius:999px;background:var(--bg-danger,#FCEBEB);color:var(--text-danger,#A32D2D);font-weight:700">'+esc(a)+'</span>';
+            }).join('')+'</div>'
+            : '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">Aucun allergène déclaré</div>')+
+        '</div>';
+      });
+      out += '</div>';
+    });
+    out += '</div>';
+    out += '<p id="pub-allergenes-empty" style="display:none;text-align:center;color:var(--text-muted);font-size:14px;padding:24px">Aucun plat ne correspond à ta recherche.</p>';
+    out += '<p style="text-align:center;color:var(--text-muted);font-size:11px;padding:8px 24px 24px">Liste communiquée à titre indicatif — n\'hésite pas à nous solliciter pour toute question.</p>';
+    root.innerHTML = out;
+  }
+  window.filterPublicAllergenesMenu = function(query){
+    const q = (query||'').trim().toLowerCase();
+    const items = document.querySelectorAll('.pub-allergene-item');
+    const cats = document.querySelectorAll('.pub-allergene-cat');
+    let anyVisible = false;
+    cats.forEach(function(catEl){
+      let catHasVisible = false;
+      catEl.querySelectorAll('.pub-allergene-item').forEach(function(itemEl){
+        const match = !q || (itemEl.getAttribute('data-name')||'').indexOf(q) >= 0;
+        itemEl.style.display = match ? '' : 'none';
+        if (match) catHasVisible = true;
+      });
+      const hasAnyItem = catEl.querySelectorAll('.pub-allergene-item').length > 0;
+      catEl.style.display = (hasAnyItem && catHasVisible) ? '' : 'none';
+      if (catHasVisible) anyVisible = true;
+    });
+    const emptyMsg = document.getElementById('pub-allergenes-empty');
+    if (emptyMsg) emptyMsg.style.display = anyVisible ? 'none' : 'block';
+  };
+
+  const publicUrlParams = new URLSearchParams(window.location.search);
+  const isPublicAllergenesMode = publicUrlParams.has('allergenes') || window.location.hash.replace('#','').toLowerCase() === 'allergenes';
+  if (isPublicAllergenesMode){
+    renderPublicAllergenesPage();
+  } else {
+    init();
+  }
 })();
 </script>
 </body>
