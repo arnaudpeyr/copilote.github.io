@@ -936,20 +936,28 @@ window.storage = {
               {id:'frdc-9', label:'Les FF des Events sont descendues sur leurs bureaux', obligatoire:true}
           ]},
           { id:'fermeture-roof', name:'Roof', icon:'door', type:'checklist', tasks:[
-              {id:'froof-1', label:'Remettre la salle en état (nettoyage, ramassage verre...)', obligatoire:true},
-              {id:'froof-2', label:'Monter les tabourets sur le plan de travail, enlever les tapis', obligatoire:true},
-              {id:'froof-3', label:'Bâcher le bed', obligatoire:true},
-              {id:'froof-4', label:'Vérifier la fermeture de la porte et des rideaux', obligatoire:true},
-              {id:'froof-5', label:'Nettoyer le pass pain', obligatoire:true},
-              {id:'froof-6', label:'Vider et nettoyer les carafes', obligatoire:true},
-              {id:'froof-7', label:'Vinaigrage des couverts', obligatoire:true},
-              {id:'froof-8', label:'Descendre le sac Ellis, les torchons et le surplus de vaisselle', obligatoire:true},
-              {id:'froof-9', label:'Aucun produit sur le groupe froid', obligatoire:true},
-              {id:'froof-10', label:'Enlever les tapis de bar', obligatoire:true},
-              {id:'froof-11', label:'Éteindre la grande et la petite guirlande', obligatoire:true},
-              {id:'froof-12', label:'Éteindre la machine à glace et la nettoyer', obligatoire:true},
-              {id:'froof-13', label:'Mettre off les multiprises', obligatoire:true},
-              {id:'froof-14', label:'Mettre les pokis à charger', obligatoire:true}
+              {id:'froof-1', label:'La salle est en état : plus rien ne traîne', obligatoire:true, group:'Salle'},
+              {id:'froof-2', label:'La machine à glaces est éteinte et nettoyée', obligatoire:true, group:'Salle'},
+              {id:'froof-3', label:'Les QR codes et les pots de fleurs sont rangés', obligatoire:true, group:'Salle'},
+              {id:'froof-4', label:'Les coussins sont remis correctement', obligatoire:true, group:'Salle'},
+              {id:'froof-5', label:'Les tapis sont remontés', obligatoire:true, group:'Salle'},
+              {id:'froof-6', label:'Tous les tabourets et toutes les chaises sont remontés sur les tables ou le bar', obligatoire:true, group:'Salle'},
+              {id:'froof-7', label:'En cas de risque de pluie pendant la nuit ou le lendemain (météo vérifiée), les beds et le canapé des oliviers sont bâchés', obligatoire:true, group:'Salle'},
+              {id:'froof-8', label:'Le passe-pain est rangé et rien ne traîne sur cet espace', obligatoire:true, group:'Salle'},
+              {id:'froof-9', label:'Les ETC en salle sont recouverts', obligatoire:true, group:'Salle'},
+              {id:'froof-10', label:'Rien n\'est stocké sur le groupe froid', obligatoire:true, group:'Bar'},
+              {id:'froof-11', label:'La machine à plonge est éteinte', obligatoire:true, group:'Bar'},
+              {id:'froof-12', label:'Les tapis de sol sont retirés', obligatoire:true, group:'Bar'},
+              {id:'froof-13', label:'Aucun fût, vide ou plein, ne traîne', obligatoire:true, group:'Bar'},
+              {id:'froof-14', label:'La porte d\'accès Guest est verrouillée', obligatoire:true, group:'Sécurité'},
+              {id:'froof-15', label:'Les guirlandes électriques sont éteintes', obligatoire:true, group:'Sécurité'},
+              {id:'froof-16', label:'La musique est éteinte', obligatoire:true, group:'Sécurité'},
+              {id:'froof-17', label:'La porte entre le Chill et le Roof est fermée', obligatoire:true, group:'Sécurité'},
+              {id:'froof-18', label:'La climatisation est allumée', obligatoire:true, group:'Arrière'},
+              {id:'froof-19', label:'Les couverts sont vinaigrés', obligatoire:true, group:'Arrière'},
+              {id:'froof-20', label:'Les assiettes sont vinaigrées', obligatoire:true, group:'Arrière'},
+              {id:'froof-21', label:'Plus rien ne traîne au sol ou sur les plans de travail', obligatoire:true, group:'Arrière'},
+              {id:'froof-22', label:'Le réassort est fait : serviettes, vichys, sacs Elis', obligatoire:true, group:'Arrière'}
           ]}
       ]}
     ]
@@ -1081,6 +1089,7 @@ window.storage = {
     sublieuId: null,
     structure: null,
     progress: {},
+    weeklyIncompleteError: false,
     historique: [],
     pertes: [],
     historiqueMonth: null,
@@ -1111,12 +1120,27 @@ window.storage = {
   };
 
   function todayKey(){ return new Date().toISOString().slice(0,10); }
+  // Renvoie la date du mardi le plus récent (aujourd'hui inclus) : sert de clé pour les
+  // checklists dont la progression doit rester partagée toute la semaine, jusqu'à
+  // la remise à zéro automatique du mardi suivant.
+  function weekKeyTuesday(){
+    const d = new Date();
+    const day = d.getDay(); // 0=dimanche, 1=lundi, 2=mardi, ...
+    let diff = day - 2;
+    if (diff < 0) diff += 7;
+    const tuesday = new Date(d);
+    tuesday.setDate(d.getDate() - diff);
+    return tuesday.toISOString().slice(0,10);
+  }
+  // Sous-lieux dont la progression de checklist doit être partagée sur toute la semaine
+  // (plutôt que remise à zéro chaque jour), avec reset automatique chaque mardi.
+  const WEEKLY_SHARED_PROGRESS_SUBLIEUX = ['nettoyage-hebdo'];
   function nowLabel(){
     const d = new Date();
     return d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
   }
 
-  const CURRENT_MIGRATION_VERSION = 1;
+  const CURRENT_MIGRATION_VERSION = 4;
   async function getMigrationVersion(){
     try {
       const res = await window.storage.get('migrationVersion', true);
@@ -1322,7 +1346,7 @@ window.storage = {
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
       const roof = fermetureCat.sublieux.find(s=>s.id==='fermeture-roof');
-      if (roof && !roof.tasks.some(t=>t.id==='froof-1')){
+      if (roof && !roof.tasks.some(t=>t.id==='froof-22' && t.group)){
         roof.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='fermeture').sublieux.find(s=>s.id==='fermeture-roof').tasks));
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
@@ -1374,9 +1398,14 @@ window.storage = {
     // l'écriture réelle est regroupée en arrière-plan pour éviter les rafales de clics.
     return Promise.resolve();
   }
+  function progressKey(sublieuId){
+    return WEEKLY_SHARED_PROGRESS_SUBLIEUX.indexOf(sublieuId) >= 0
+      ? 'progress:'+sublieuId+':week-'+weekKeyTuesday()
+      : 'progress:'+sublieuId+':'+todayKey();
+  }
   async function getProgress(sublieuId){
     try {
-      const res = await window.storage.get('progress:'+sublieuId+':'+todayKey(), true);
+      const res = await window.storage.get(progressKey(sublieuId), true);
       const p = JSON.parse(res.value);
       // Sécurité : si une checklist est encore marquée "validée" (résidu d'un ancien
       // enregistrement), on la remet à zéro immédiatement au lieu de l'afficher cochée.
@@ -1391,7 +1420,7 @@ window.storage = {
     }
   }
   async function setProgress(sublieuId, p){
-    await window.storage.set('progress:'+sublieuId+':'+todayKey(), JSON.stringify(p), true);
+    await window.storage.set(progressKey(sublieuId), JSON.stringify(p), true);
   }
   async function getHistorique(){
     try {
@@ -1787,7 +1816,7 @@ window.storage = {
   }
 
   const SESSION_SNAPSHOT_KEY = 'copilote_session_snapshot';
-  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','remonteeRecipient','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto'];
+  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','remonteeRecipient','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','entertainmentEditingId','entFormDate','entFormType','entFormInfo','cameFromManagerMenu'];
   function compressImageDataUrl(dataUrl, maxWidth, quality){
     return new Promise(function(resolve){
       try {
@@ -1818,7 +1847,7 @@ window.storage = {
       sessionStorage.setItem(SESSION_SNAPSHOT_KEY, JSON.stringify(snap));
     } catch(e){}
   }
-  function restoreSessionSnapshot(){
+  async function restoreSessionSnapshot(){
     try {
       if (typeof sessionStorage === 'undefined') return false;
       const raw = sessionStorage.getItem(SESSION_SNAPSHOT_KEY);
@@ -1826,8 +1855,16 @@ window.storage = {
       const snap = JSON.parse(raw);
       // Une sauvegarde de plus de 10 minutes est jugée trop ancienne pour être restaurée automatiquement.
       if (!snap._ts || (Date.now() - snap._ts) > 10*60*1000) return false;
-      if (!snap.name) return false;
+      const wasLoggedIn = snap.managerUnlocked || snap.economeUnlocked || snap.entertainmentUnlocked || snap.eventsUnlocked || snap.rhUnlocked || snap.techniqueUnlocked || snap.adminUnlocked || snap.name;
+      if (!wasLoggedIn) return false;
       SESSION_SNAPSHOT_FIELDS.forEach(function(f){ if (snap[f] !== undefined) state[f] = snap[f]; });
+      // Recharge les données nécessaires pour que l'écran restauré (ex: modification d'une fiche) fonctionne bien.
+      if (state.screen === 'events-form' && state.eventsUnlocked){
+        state.eventSheets = await getEventSheets();
+      }
+      if (state.screen === 'entertainment-form' && state.entertainmentUnlocked){
+        state.events = await getEvents();
+      }
       return true;
     } catch(e){ return false; }
   }
@@ -1850,27 +1887,67 @@ window.storage = {
         // Chemin rapide : tout est déjà à jour, on saute toutes les vérifications
         // de migration (gain de temps important à chaque connexion).
         state.structure = structureRaw;
-        restoreSessionSnapshot();
+        await restoreSessionSnapshot();
         state.loading = false;
         render();
         return;
       }
-      state.structure = await loadStructureWithMigrations();
+      let structureMigrationOk = true;
+      try {
+        state.structure = await loadStructureWithMigrations();
+      } catch(migErr){
+        console.error('Erreur pendant la migration de structure (on continue avec la version actuelle):', migErr);
+        state.structure = structureRaw;
+        structureMigrationOk = false;
+      }
       let seedUsersChanged = false;
-      const oldAdminSeed = seedUsers.find(function(u){ return u.id === 'usr-seed-arnaud-admin'; });
-      if (oldAdminSeed && oldAdminSeed.code !== '1515'){
-        oldAdminSeed.code = '1515';
-        seedUsersChanged = true;
-      } else if (!oldAdminSeed && !seedUsers.some(function(u){ return u.role === 'admin' && u.code === '1515'; })){
-        seedUsers.push({ id:'usr-seed-arnaud-admin', name:'Arnaud', role:'admin', code:'1515' });
-        seedUsersChanged = true;
+      try {
+        const oldAdminSeed = seedUsers.find(function(u){ return u.id === 'usr-seed-arnaud-admin'; });
+        if (oldAdminSeed && oldAdminSeed.code !== '1515'){
+          oldAdminSeed.code = '1515';
+          seedUsersChanged = true;
+        } else if (!oldAdminSeed && !seedUsers.some(function(u){ return u.role === 'admin' && u.code === '1515'; })){
+          seedUsers.push({ id:'usr-seed-arnaud-admin', name:'Arnaud', role:'admin', code:'1515' });
+          seedUsersChanged = true;
+        }
+        if (seedUsersChanged){
+          await saveAccessUsers(seedUsers);
+        }
+        if (!seedGangUsers.some(function(u){ return u.code === '1789'; })){
+          seedGangUsers.push({ id:'gang-seed-arnaud', name:'Arnaud', code:'1789' });
+          await saveMamaGangUsers(seedGangUsers);
+        }
+      } catch(seedErr){
+        console.error('Erreur pendant la vérification des profils admin/seed (on continue) :', seedErr);
       }
-      if (seedUsersChanged){
-        await saveAccessUsers(seedUsers);
-      }
-      if (!seedGangUsers.some(function(u){ return u.code === '1789'; })){
-        seedGangUsers.push({ id:'gang-seed-arnaud', name:'Arnaud', code:'1789' });
-        await saveMamaGangUsers(seedGangUsers);
+      try {
+        const newProfiles = [
+          {name:'Anaïs M', code:'6719'},
+          {name:'Anaïs Y', code:'9173'},
+          {name:'Bruno', code:'2604'},
+          {name:'Charles', code:'6130'},
+          {name:'Cléa', code:'4873'},
+          {name:'Cyntia', code:'6132'},
+          {name:'Elisa', code:'9546'},
+          {name:'Ella', code:'171'},
+          {name:'Giuseppe', code:'4587'},
+          {name:'Matéo L', code:'9864'},
+          {name:'Louis', code:'4319'},
+          {name:'Matéo St', code:'6731'},
+          {name:'Maxence', code:'5947'}
+        ];
+        let newProfilesAdded = false;
+        newProfiles.forEach(function(p){
+          if (!seedGangUsers.some(function(u){ return u.code === p.code; })){
+            seedGangUsers.push({ id:'gang-'+p.code+'-'+Date.now(), name: p.name, code: p.code, poste:'non-attribue' });
+            newProfilesAdded = true;
+          }
+        });
+        if (newProfilesAdded){
+          await saveMamaGangUsers(seedGangUsers);
+        }
+      } catch(profilesErr){
+        console.error('Erreur pendant l\'ajout des nouveaux profils (on continue) :', profilesErr);
       }
       try {
         const existingProcessInfos = await getProcessInfos();
@@ -1918,8 +1995,10 @@ window.storage = {
           await saveProcessInfos(existingProcessInfos);
         }
       } catch(e){}
-      await window.storage.set('migrationVersion', String(CURRENT_MIGRATION_VERSION), true);
-      restoreSessionSnapshot();
+      if (structureMigrationOk){
+        await window.storage.set('migrationVersion', String(CURRENT_MIGRATION_VERSION), true);
+      }
+      await restoreSessionSnapshot();
       state.loading = false;
       render();
     } catch(e){
@@ -1933,6 +2012,7 @@ window.storage = {
 
   window.trackFormField = function(field, value){
     state[field] = value;
+    persistSessionSnapshot();
   };
   window.appAction = async function(action, payload){
     if (state.globalError && action !== 'dismissGlobalError'){
@@ -2181,11 +2261,18 @@ window.storage = {
     }
     else if (action === 'goEntertainmentAdd'){
       state.entertainmentEditingId = null;
+      state.entFormDate = '';
+      state.entFormType = '';
+      state.entFormInfo = '';
       state.screen = 'entertainment-form';
       render();
     }
     else if (action === 'editEntertainmentEvent'){
       state.entertainmentEditingId = payload;
+      const editingEv = (state.events||[]).find(function(e){ return e.id === payload; });
+      state.entFormDate = editingEv ? (editingEv.date||'') : '';
+      state.entFormType = editingEv ? (editingEv.type||'') : '';
+      state.entFormInfo = editingEv ? (editingEv.info||'') : '';
       state.screen = 'entertainment-form';
       render();
     }
@@ -2200,6 +2287,7 @@ window.storage = {
       const typeOther = document.getElementById('ent-type-other').value.trim();
       const type = typeSelect === 'Autre' ? typeOther : typeSelect;
       const info = document.getElementById('ent-info').value.trim();
+      state.entFormDate = date; state.entFormType = type; state.entFormInfo = info;
       if (!date || !type) return;
       let list = state.events || [];
       if (state.entertainmentEditingId){
@@ -2211,6 +2299,7 @@ window.storage = {
       await saveEvents(list);
       state.events = list;
       state.entertainmentEditingId = null;
+      state.entFormDate = ''; state.entFormType = ''; state.entFormInfo = '';
       state.screen = 'entertainment-list';
       render();
     }
@@ -3509,6 +3598,7 @@ window.storage = {
         render();
         return;
       }
+      state.weeklyIncompleteError = false;
       state.progress[payload.subId] = await getProgress(payload.subId);
       if (!state.progress[payload.subId].operator){
         state.progress[payload.subId].operator = state.name;
@@ -3719,10 +3809,18 @@ window.storage = {
       const p = state.progress[subId];
       const allChecked = sub.tasks.length > 0 && p.checked.length === sub.tasks.length;
       if (!allChecked){
+        if (WEEKLY_SHARED_PROGRESS_SUBLIEUX.indexOf(subId) >= 0){
+          // Pas de "valider quand même" pour une checklist à progression partagée sur la semaine :
+          // tant qu'elle n'est pas complète, elle reste simplement en attente.
+          state.weeklyIncompleteError = true;
+          render();
+          return;
+        }
         state.confirmValidateAnyway = true;
         render();
         return;
       }
+      state.weeklyIncompleteError = false;
       await doValidateChecklist();
     }
     else if (action === 'confirmValidateAnyway'){
@@ -4080,7 +4178,7 @@ window.storage = {
 
   function screenPerteForm(){
     const sub = findSublieu(state.categoryId, state.sublieuId);
-    const raisons = ['Casse','Erreur de service / préparation','Péremption / DLC dépassée','Vol ou disparition','Offert au client','Test carte/recette','Autre'];
+    const raisons = ['Casse','Erreur de service / préparation','Péremption / DLC dépassée','Vol ou disparition','Offert au client','Cuisine','Test carte/recette','Autre'];
     let out = '<div style="padding:20px 16px 8px">'+
       '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
         '<div onclick="appAction(\'goHome\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
@@ -4334,7 +4432,10 @@ window.storage = {
     if (total === 0){
       out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucune tâche définie ici pour l\'instant. Ajoute des tâches depuis Admin.</div>';
     }
-    sub.tasks.forEach(function(t){
+    sub.tasks.forEach(function(t, idx){
+      if (t.group && t.group !== sub.tasks[idx-1]?.group){
+        out += '<div class="mama-title" style="font-size:14px;color:var(--text-accent,#E8432B);margin-top:'+(idx===0?'0':'8px')+'">'+esc(t.group)+'</div>';
+      }
       const checked = p.checked.indexOf(t.id) >= 0;
       out += '<div onclick="appAction(\'toggleTask\',\''+t.id+'\')" style="display:flex;align-items:center;gap:12px;padding:16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000);background:'+(checked?'var(--bg-accent,#FFD500)':'var(--surface-1)')+'">'+
         '<div style="flex:1;font-size:15px;font-weight:600;color:var(--text-primary)">'+esc(t.label)+'</div>'+
@@ -4344,15 +4445,26 @@ window.storage = {
     out += '</div>';
 
     if (total > 0){
+      const isWeekly = WEEKLY_SHARED_PROGRESS_SUBLIEUX.indexOf(state.sublieuId) >= 0;
       out += '<div style="padding:8px 16px">'+
         '<label style="font-size:14px;color:var(--text-secondary);font-weight:600">Commentaires (optionnel)</label>'+
         '<textarea id="checklist-comment" '+(p.validated?'disabled':'')+' onblur="appAction(\'saveComment\')" placeholder="Ex: manque un feutre rouge, prise cassée…" style="width:100%;box-sizing:border-box;min-height:70px;margin-top:6px;padding:12px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:14px;font-family:inherit;resize:vertical">'+esc(p.comment||'')+'</textarea>'+
       '</div>';
 
+      if (isWeekly && !allChecked && !p.validated){
+        out += '<div style="margin:0 16px 8px;padding:12px;border-radius:10px;background:var(--surface-0);color:var(--text-secondary);font-size:13px">'+
+          'En attente — '+done+'/'+total+' tâches faites cette semaine. Elle repassera à zéro automatiquement mardi prochain, ou dès que tout est coché puis validé.'+
+        '</div>';
+      }
+      if (state.weeklyIncompleteError){
+        out += '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0 16px 8px">Complète toutes les tâches avant de pouvoir valider.</p>';
+      }
+
       out += '<div style="padding:16px">'+
         '<button '+(p.validated ? 'disabled' : '')+' onclick="appAction(\'validate\')" style="width:100%;padding:16px;border-radius:10px;font-size:15px;cursor:'+(!p.validated?'pointer':'not-allowed')+';border:'+(!p.validated?'2.5px solid var(--border-strong,#000)':'2px solid var(--border)')+';font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:'+(!p.validated?'3px 3px 0 var(--border-strong,#000)':'none')+';background:'+(!p.validated?'var(--text-accent,#185FA5)':'var(--surface-0)')+';color:'+(!p.validated?'#fff':'var(--text-muted)')+'">'+
-        (p.validated ? 'Checklist déjà validée aujourd\'hui' : 'Valider la checklist')+
+        (p.validated ? (isWeekly ? 'Checklist déjà validée' : 'Checklist déjà validée aujourd\'hui') : 'Valider la checklist')+
         '</button>'+
+        (isWeekly && !p.validated ? '<button onclick="appAction(\'goHome\')" style="width:100%;margin-top:10px;padding:14px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary)">Continuer une autre fois</button>' : '')+
       '</div>';
     }
 
@@ -4433,20 +4545,20 @@ window.storage = {
     out += '<div onclick="appAction(\'backEntertainmentList\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;margin-bottom:14px;font-size:14px">'+icon('back',18)+'<span>Retour</span></div>';
     out += '<div style="display:flex;flex-direction:column;gap:14px">';
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Date</label>'+
-      '<input id="ent-date" type="date" value="'+(editing?esc(editing.date):'')+'" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px"></div>';
+      '<input id="ent-date" type="date" value="'+esc(state.entFormDate)+'" oninput="trackFormField(\'entFormDate\', this.value)" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px"></div>';
     const standardTypes = ['DJ set','Soirée spéciale','Animation','Concert','Quiz','Karaoké'];
-    const isOther = editing && editing.type && !standardTypes.includes(editing.type);
+    const isOther = state.entFormType && !standardTypes.includes(state.entFormType);
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Type d\'animation</label>'+
-      '<select id="ent-type-select" onchange="document.getElementById(\'ent-type-other-wrap\').style.display=this.value===\'Autre\'?\'block\':\'none\'" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px">'+
-        standardTypes.map(function(t){ return '<option value="'+esc(t)+'" '+(editing && editing.type===t?'selected':'')+'>'+esc(t)+'</option>'; }).join('')+
+      '<select id="ent-type-select" onchange="trackFormField(\'entFormType\', this.value); document.getElementById(\'ent-type-other-wrap\').style.display=this.value===\'Autre\'?\'block\':\'none\'" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px">'+
+        standardTypes.map(function(t){ return '<option value="'+esc(t)+'" '+(state.entFormType===t?'selected':'')+'>'+esc(t)+'</option>'; }).join('')+
         '<option value="Autre" '+(isOther?'selected':'')+'>Autre</option>'+
       '</select>'+
       '<div id="ent-type-other-wrap" style="display:'+(isOther?'block':'none')+';margin-top:8px">'+
-        '<input id="ent-type-other" type="text" placeholder="Précise le type d\'animation" value="'+(isOther?esc(editing.type):'')+'" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px">'+
+        '<input id="ent-type-other" type="text" placeholder="Précise le type d\'animation" value="'+(isOther?esc(state.entFormType):'')+'" oninput="trackFormField(\'entFormType\', this.value)" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px">'+
       '</div>'+
     '</div>';
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Infos spéciales (optionnel)</label>'+
-      '<textarea id="ent-info" placeholder="Ex: début 20h, accès roof réservé…" style="width:100%;box-sizing:border-box;min-height:80px;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px;font-family:inherit;resize:vertical">'+(editing?esc(editing.info||''):'')+'</textarea></div>';
+      '<textarea id="ent-info" placeholder="Ex: début 20h, accès roof réservé…" oninput="trackFormField(\'entFormInfo\', this.value)" style="width:100%;box-sizing:border-box;min-height:80px;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px;font-family:inherit;resize:vertical">'+esc(state.entFormInfo)+'</textarea></div>';
     out += '<button onclick="appAction(\'saveEntertainmentEvent\')" style="width:100%;padding:16px;border-radius:10px;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;border:2.5px solid var(--border-strong,#000);box-shadow:3px 3px 0 var(--border-strong,#000);background:var(--text-accent,#E8432B);color:#fff">'+(editing?'Modifier l\'animation':'Ajouter l\'animation')+'</button>';
     if (editing){
       out += '<button onclick="appAction(\'deleteEntertainmentEvent\',\''+editing.id+'\')" style="width:100%;padding:12px;border-radius:10px;font-size:14px;cursor:pointer;border:none;background:none;color:var(--text-danger,#A32D2D)">Supprimer cette animation</button>';
