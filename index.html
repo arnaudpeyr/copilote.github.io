@@ -6287,8 +6287,11 @@ window.storage = {
     '</div>';
     out += '<div id="pub-allergenes-list" style="padding:8px 16px 24px;display:flex;flex-direction:column;gap:10px">';
     menu.categories.forEach(function(cat){
-      out += '<div class="pub-allergene-cat" data-cat="'+cat.id+'" style="'+(cat.items.length===0?'display:none':'')+'">';
+      out += '<div class="pub-allergene-cat" data-cat="'+cat.id+'">';
       out += '<div class="mama-title" style="font-size:16px;color:var(--text-accent,#E8432B);margin:10px 0 6px">'+esc(cat.name)+'</div>';
+      if (cat.items.length === 0){
+        out += '<div style="font-size:13px;color:var(--text-muted);padding:8px 0">Aucun plat pour l\'instant dans cette catégorie.</div>';
+      }
       cat.items.forEach(function(it){
         out += '<div class="pub-allergene-item" data-name="'+esc(it.name.toLowerCase())+'" style="padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);margin-bottom:8px">'+
           '<div style="font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(it.name)+'</div>'+
