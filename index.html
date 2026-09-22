@@ -41,6 +41,8 @@
 }
 .script-letter{ display:inline-block; opacity:0; animation:letterWrite 0.6s ease-out forwards; }
 @keyframes submitSpin{ to{ transform:rotate(360deg); } }
+.pub-allergene-cat summary::-webkit-details-marker{ display:none; }
+.pub-allergene-cat[open] .pub-allergene-chevron{ transform:rotate(180deg); }
 @keyframes pulseAlert{
   0%{ box-shadow:3px 3px 0 var(--border-strong,#000), 0 0 0 0 rgba(232,67,43,0.6); }
   70%{ box-shadow:3px 3px 0 var(--border-strong,#000), 0 0 0 10px rgba(232,67,43,0); }
@@ -96,10 +98,10 @@ window.storage = {
   const ALLERGENES_LIST = ['Gluten','Crustacés','Œufs','Poissons','Arachides','Soja','Lait','Fruits à coque','Céleri','Moutarde','Graines de sésame','Sulfites','Lupin','Mollusques'];
   const DEFAULT_ALLERGENES_MENU = {
     categories: [
-      { id:'entrees-tapas', name:'Entrées / Tapas', items:[] },
-      { id:'plats', name:'Plats', items:[] },
-      { id:'desserts', name:'Desserts', items:[] },
-      { id:'menu-groupe', name:'Menu groupe', items:[] }
+      { id:'entrees-tapas', name:'Entrées / Tapas', items:[{id:'aet-1', name:'ŒUFS MIMOSA KIMCHI', allergenes:['Fruits à coque','Moutarde','Œufs','Poissons','Sulfites']},{id:'aet-2', name:'BURRATA', allergenes:['Lait']},{id:'aet-3', name:'DAURADE EN AGUALICHE', allergenes:['Poissons']},{id:'aet-4', name:'BROCHETTES COEUR DE CANARD', allergenes:['Moutarde','Sulfites']},{id:'aet-5', name:'POULET CRUNCHY', allergenes:['Arachides','Gluten','Crustacés','Graines de sésame','Sulfites']},{id:'aet-6', name:'ASPERGES SAUCE HOLLANDAISE', allergenes:['Lait','Œufs']},{id:'aet-7', name:'FALAFELS AU ZAATAR', allergenes:['Céleri','Gluten','Moutarde','Graines de sésame']},{id:'aet-8', name:'GAMBAS EN KADAÏF', allergenes:['Crustacés','Lait','Moutarde','Œufs']},{id:'aet-9', name:'SALADE MEDITERRANEENNE', allergenes:['Gluten','Lait','Moutarde','Œufs','Graines de sésame']},{id:'aet-10', name:'TACOS DE PORC', allergenes:['Céleri','Gluten','Lait','Moutarde','Œufs','Sulfites']},{id:'aet-11', name:'GRAVLAX DE BOEUF', allergenes:['Céleri','Gluten','Lait','Moutarde','Œufs','Graines de sésame','Soja','Sulfites']},{id:'aet-12', name:'CURRY JAUNE DE LEGUMES', allergenes:['Céleri','Moutarde']},{id:'aet-13', name:'CHARCUTERIES', allergenes:['Gluten','Lait']},{id:'aet-14', name:'FROMAGES', allergenes:['Lait']}] },
+      { id:'plats', name:'Plats', items:[{id:'apl-1', name:'Cocotte de coquillettes', allergenes:['Gluten','Lait','Œufs','Sulfites']},{id:'apl-2', name:'Saucisse de Toulouse', allergenes:['Céleri','Lait','Moutarde']},{id:'apl-3', name:'Salade César', allergenes:['Gluten','Lait','Moutarde','Œufs','Poissons','Sulfites']},{id:'apl-4', name:'Cheesburger', allergenes:['Gluten','Lait','Moutarde','Œufs','Sulfites']},{id:'apl-5', name:'Saumon mi cuit', allergenes:['Gluten','Lait','Mollusques','Moutarde','Graines de sésame','Soja','Sulfites']},{id:'apl-6', name:'Suprême de volaille', allergenes:['Gluten','Lait','Moutarde','Soja','Sulfites']},{id:'apl-7', name:'Magret de canard', allergenes:['Gluten','Lait','Moutarde','Soja','Sulfites']},{id:'apl-8', name:'Pluma Iberica', allergenes:['Gluten','Lait','Moutarde','Soja','Sulfites']},{id:'apl-9', name:'Faux Filet', allergenes:['Gluten','Lait','Moutarde','Soja','Sulfites']},{id:'apl-10', name:'Tentacule de poulpe', allergenes:['Gluten','Lait','Mollusques','Moutarde','Soja','Sulfites']},{id:'apl-11', name:'Epaule d\'agneau', allergenes:['Gluten','Lait','Moutarde','Soja','Sulfites']},{id:'apl-12', name:'Parillada', allergenes:['Gluten','Lait','Moutarde','Soja','Sulfites']},{id:'apl-13', name:'Côte de bœuf', allergenes:['Gluten','Lait','Moutarde','Œufs','Soja','Sulfites']},{id:'apl-14', name:'4 fromages', group:'Pizzas', allergenes:['Gluten','Lait','Sulfites']},{id:'apl-15', name:'Végétarienne', group:'Pizzas', allergenes:['Gluten','Lait','Sulfites']},{id:'apl-16', name:'Margarita', group:'Pizzas', allergenes:['Gluten','Lait','Sulfites']},{id:'apl-17', name:'Reine', group:'Pizzas', allergenes:['Gluten','Lait','Sulfites']},{id:'apl-18', name:'Burrata', group:'Pizzas', allergenes:['Gluten','Lait','Sulfites']},{id:'apl-19', name:'Toulousaine', group:'Pizzas', allergenes:['Gluten','Lait','Sulfites']},{id:'apl-20', name:'Tartufata', group:'Pizzas', allergenes:['Gluten','Lait','Sulfites']},{id:'apl-21', name:'Diavola', group:'Pizzas', allergenes:['Gluten','Lait','Sulfites']},{id:'apl-22', name:'Nutella', group:'Pizzas', allergenes:['Gluten','Fruits à coque','Lait','Soja','Sulfites']}] },
+      { id:'desserts', name:'Desserts', items:[{id:'ade-1', name:'GLACES / SORBETS', allergenes:['Arachides','Gluten','Fruits à coque','Lait','Lupin','Œufs','Graines de sésame','Soja','Sulfites']},{id:'ade-2', name:'SABLE BRETON', allergenes:['Arachides','Gluten','Fruits à coque','Lait','Lupin','Œufs','Graines de sésame','Soja','Sulfites']},{id:'ade-3', name:'TIRAMISU', allergenes:['Arachides','Gluten','Fruits à coque','Lait','Lupin','Œufs','Graines de sésame','Soja','Sulfites']},{id:'ade-4', name:'TARTE CHOCO', allergenes:['Arachides','Gluten','Fruits à coque','Lait','Lupin','Œufs','Graines de sésame','Soja','Sulfites']},{id:'ade-5', name:'PAVLOVA AUX FRUITS', allergenes:['Arachides','Gluten','Fruits à coque','Lait','Lupin','Œufs','Graines de sésame','Soja','Sulfites']},{id:'ade-6', name:'TARTE AUX FRAISES / PISTACHE', allergenes:['Arachides','Gluten','Fruits à coque','Lait','Lupin','Œufs','Graines de sésame','Soja','Sulfites']},{id:'ade-7', name:'ECLAIR CHOCO PRALINE', allergenes:['Arachides','Gluten','Fruits à coque','Lait','Lupin','Œufs','Graines de sésame','Soja','Sulfites']},{id:'ade-8', name:'MILLEFEUILLE VANILLE', allergenes:['Arachides','Gluten','Fruits à coque','Lait','Lupin','Œufs','Graines de sésame','Soja','Sulfites']},{id:'ade-9', name:'MOELLEUX CHOCO', allergenes:['Arachides','Gluten','Fruits à coque','Lait','Lupin','Œufs','Graines de sésame','Soja','Sulfites']},{id:'ade-10', name:'BIG COOKIE', allergenes:['Arachides','Gluten','Fruits à coque','Lait','Lupin','Œufs','Graines de sésame','Soja','Sulfites']},{id:'ade-11', name:'GOURMAND', allergenes:['Arachides','Gluten','Fruits à coque','Lait','Lupin','Œufs','Graines de sésame','Soja','Sulfites']}] },
+      { id:'menu-groupe', name:'Menu groupe', items:[{id:'amg-1', name:'Guacamole DIP', group:'Apéritif 25/35', allergenes:['Céleri','Moutarde']},{id:'amg-2', name:'Stracciatella truffée DIP', group:'Apéritif 25/35', allergenes:['Lait']},{id:'amg-3', name:'Houmous DIP', group:'Apéritif 25/35', allergenes:['Graines de sésame']},{id:'amg-4', name:'Pain Toasté DIP', group:'Apéritif 25/35', allergenes:['Gluten','Lait']},{id:'amg-5', name:'Sandwich Foccacia', group:'Apéritif 25/35', allergenes:['Gluten','Lait','Moutarde','Œufs','Graines de sésame']},{id:'amg-6', name:'Falafels de la Mama', group:'Apéritif 25/35', allergenes:['Gluten','Moutarde','Graines de sésame']},{id:'amg-7', name:'Pan con tomate / Serrano', group:'Déjeuner Groupe 36/42', allergenes:['Gluten','Sulfites']},{id:'amg-8', name:'Salade tomates & pesto', group:'Déjeuner Groupe 36/42', allergenes:['Fruits à coque','Lait']},{id:'amg-9', name:'Wraps saumon & sauce wasabi', group:'Déjeuner Groupe 36/42', allergenes:['Gluten','Moutarde','Œufs','Poissons','Soja']},{id:'amg-10', name:'Taboulé de la mama', group:'Déjeuner Groupe 36/42', allergenes:['Gluten']},{id:'amg-11', name:'Soupe froide du moment', group:'Déjeuner Groupe 36/42', allergenes:[]},{id:'amg-12', name:'Cocotte de coquillettes, jambon Mostoles & oeuf mollet', group:'Déjeuner Groupe 36/42', allergenes:['Gluten','Lait','Œufs']},{id:'amg-13', name:'Poulet aux 4 épices, salade de légumes', group:'Déjeuner Groupe 36/42', allergenes:['Céleri','Moutarde','Soja']},{id:'amg-14', name:'Légumes farcies au porc', group:'Déjeuner Groupe 36/42', allergenes:['Gluten','Œufs']},{id:'amg-15', name:'Moules marinières & frites', group:'Déjeuner Groupe 36/42', allergenes:['Mollusques','Sulfites']},{id:'amg-16', name:'Aubergine au miso & fêta', group:'Déjeuner Groupe 36/42', allergenes:['Lait','Soja']},{id:'amg-17', name:'Pasta de la Mama, pesto, roquette parmesan)', group:'Déjeuner Groupe 36/42', allergenes:['Gluten','Fruits à coque','Lait']},{id:'amg-18', name:'Sablé breton & mousse au citron', group:'Déjeuner Groupe 36/42', allergenes:['Gluten','Lait','Œufs']},{id:'amg-19', name:'Mousse chocolat', group:'Déjeuner Groupe 36/42', allergenes:['Lait','Œufs']},{id:'amg-20', name:'Ile flottante', group:'Déjeuner Groupe 36/42', allergenes:['Lait','Œufs']},{id:'amg-21', name:'Tarte aux fruits de saison', group:'Déjeuner Groupe 36/42', allergenes:['Gluten','Lait','Œufs']},{id:'amg-22', name:'Clafoutis aux fruits de saison', group:'Déjeuner Groupe 36/42', allergenes:['Gluten','Lait','Œufs']},{id:'amg-23', name:'Migniardises du chef', group:'Déjeuner Groupe 36/42', allergenes:[]},{id:'amg-24', name:'Falafels de la Mama', group:'Déjeunette / Dinette', allergenes:['Gluten','Moutarde','Graines de sésame']},{id:'amg-25', name:'Artichaut, sauce yaourt grec', group:'Déjeunette / Dinette', allergenes:['Lait']},{id:'amg-26', name:'Straciatella truffée DIP', group:'Déjeunette / Dinette', allergenes:['Lait']},{id:'amg-27', name:'Houmous DIP', group:'Déjeunette / Dinette', allergenes:['Graines de sésame']},{id:'amg-28', name:'Guacamole DIP', group:'Déjeunette / Dinette', allergenes:['Céleri','Moutarde']},{id:'amg-29', name:'Pain toasté DIP', group:'Déjeunette / Dinette', allergenes:['Gluten','Lait','Graines de sésame']},{id:'amg-30', name:'Sandwich focaccia', group:'Déjeunette / Dinette', allergenes:['Gluten','Lait','Moutarde','Œufs','Graines de sésame']},{id:'amg-31', name:'Salade de chou Thaï, coriandre, poivron', group:'Déjeunette / Dinette', allergenes:['Arachides','Graines de sésame','Soja']},{id:'amg-32', name:'Gambas en kadaïf, mayo jalapenos', group:'Déjeunette / Dinette', allergenes:['Gluten','Crustacés','Moutarde','Œufs']},{id:'amg-33', name:'Brochettes de la Maison Garcia', group:'Déjeunette / Dinette', allergenes:['Céleri','Moutarde','Soja','Sulfites']},{id:'amg-34', name:'Assortiments sucrés', group:'Déjeunette / Dinette', allergenes:[]},{id:'amg-35', name:'Gravelax de boeuf', group:'Dîner Groupe 52', allergenes:['Moutarde','Soja','Sulfites']},{id:'amg-36', name:'Légumes grillés, stracciatella, pesto', group:'Dîner Groupe 52', allergenes:['Fruits à coque','Lait']},{id:'amg-37', name:'Gambas en kadaïf, mayo aux jalapenos', group:'Dîner Groupe 52', allergenes:['Gluten','Crustacés','Moutarde','Œufs']},{id:'amg-38', name:'Salade grecque, fêta, pastèque, basilic', group:'Dîner Groupe 52', allergenes:['Lait']},{id:'amg-39', name:'Burrata crémeuse', group:'Dîner Groupe 52', allergenes:['Lait']},{id:'amg-40', name:'Cocotte de coquillettes, jambon Mostoles & oeuf mollet', group:'Dîner Groupe 52', allergenes:['Gluten','Lait','Œufs']},{id:'amg-41', name:'Saucisse de Toulouse, purée de PDT, jus de volaille moutardé', group:'Dîner Groupe 52', allergenes:['Lait','Moutarde']},{id:'amg-42', name:'Pastilla de poulet, semoule épicée', group:'Dîner Groupe 52', allergenes:['Gluten','Fruits à coque','Œufs']},{id:'amg-43', name:'Tortilla de porc confit à la mexicaine', group:'Dîner Groupe 52', allergenes:['Gluten','Moutarde','Soja']},{id:'amg-44', name:'Escalope viennoise, olives, persil, câpres, citron, légumes croquants', group:'Dîner Groupe 52', allergenes:['Gluten','Œufs']},{id:'amg-45', name:'Poisson du jour, riz sauté à l\'ail, brunoise de légumes', group:'Dîner Groupe 52', allergenes:['Crustacés','Mollusques','Poissons','Soja']},{id:'amg-46', name:'Foccacia chèvre miel & roquette', group:'Dîner Groupe 52', allergenes:['Gluten','Lait']},{id:'amg-47', name:'Pasta de la Mama aux légumes confits', group:'Dîner Groupe 52', allergenes:['Gluten','Lait']},{id:'amg-48', name:'Côtes de boeuf maturée, PDT grenailles, salade', group:'Dîner Groupe 52', allergenes:['Lait','Moutarde']},{id:'amg-49', name:'Tarte merveilleuse aux fraises', group:'Dîner Groupe 52', allergenes:['Gluten','Lait','Œufs']},{id:'amg-50', name:'Tarte fruits rouges & choco', group:'Dîner Groupe 52', allergenes:['Gluten','Lait','Œufs','Soja']},{id:'amg-51', name:'Baba au rhum', group:'Dîner Groupe 52', allergenes:['Gluten','Lait','Œufs','Sulfites']},{id:'amg-52', name:'Big cookie de la Mama', group:'Dîner Groupe 52', allergenes:['Gluten','Lait','Œufs','Soja']},{id:'amg-53', name:'Fruits de saison et sorbet', group:'Dîner Groupe 52', allergenes:['Sulfites']},{id:'amg-54', name:'Salade de fraise et menthe', group:'Dîner Groupe 52', allergenes:[]},{id:'amg-55', name:'Assortiment de Mignardises', group:'Dîner Groupe 52', allergenes:[]},{id:'amg-56', name:'Légumes grillés, pesto et parmesan', group:'Dinette Dolce Vita', allergenes:['Fruits à coque','Lait']},{id:'amg-57', name:'Calamars croustillants', group:'Dinette Dolce Vita', allergenes:['Gluten','Mollusques']},{id:'amg-58', name:'Soupe froide', group:'Dinette Dolce Vita', allergenes:['Gluten','Graines de sésame']},{id:'amg-59', name:'Foccacia', group:'Dinette Dolce Vita', allergenes:['Gluten']},{id:'amg-60', name:'Arrancini au beurre persillé, sauce tomate épicées', group:'Dinette Dolce Vita', allergenes:['Gluten','Lait']},{id:'amg-61', name:'Mozzarella croustillante', group:'Dinette Dolce Vita', allergenes:['Gluten','Lait']},{id:'amg-62', name:'Olives et gressin', group:'Dinette Dolce Vita', allergenes:['Gluten','Œufs','Graines de sésame','Sulfites']},{id:'amg-63', name:'Chariot de glaces', group:'Dinette Dolce Vita', allergenes:['Gluten','Fruits à coque','Lait','Œufs','Soja','Sulfites']},{id:'amg-64', name:'Tiramisu', group:'Dinette Dolce Vita', allergenes:['Gluten','Lait','Œufs']},{id:'amg-65', name:'Crudités à dipper', group:'Dinette Dolce Vita', allergenes:[]},{id:'amg-66', name:'Croquettes tartufata', group:'Dinette Dolce Vita', allergenes:['Gluten','Lait','Œufs']},{id:'amg-67', name:'Stracciatela et focaccia', group:'Dinette Dolce Vita', allergenes:['Gluten','Lait','Œufs','Sulfites']},{id:'amg-68', name:'Assortiments de charcuteries', group:'Dinette Dolce Vita', allergenes:['Sulfites']},{id:'amg-69', name:'GUACAMOLE & PAIN PIZZA', group:'Dinette Fiesta', allergenes:['Céleri','Gluten','Lait','Moutarde']},{id:'amg-70', name:'Quesadillas poulet cheddar', group:'Dinette Fiesta', allergenes:['Gluten','Lait']},{id:'amg-71', name:'Taco de boeuf, cheddar, chimichurri', group:'Dinette Fiesta', allergenes:['Gluten','Lait','Moutarde','Sulfites']},{id:'amg-72', name:'Frites de patate douce', group:'Dinette Fiesta', allergenes:['Gluten']},{id:'amg-73', name:'Croquetas Végé', group:'Dinette Fiesta', allergenes:['Gluten','Lait','Œufs']},{id:'amg-74', name:'Brochettes de la Maison Garcia', group:'Dinette Fiesta', allergenes:['Céleri','Moutarde','Soja','Sulfites']},{id:'amg-75', name:'Saucisse chimichurri', group:'Dinette Fiesta', allergenes:['Moutarde','Sulfites']},{id:'amg-76', name:'Salade de quinoa à la mangue', group:'Dinette Fiesta', allergenes:['Fruits à coque','Graines de sésame','Sulfites']},{id:'amg-77', name:'Brochettes d\'ananas rôtis', group:'Dinette Fiesta', allergenes:['Sulfites']},{id:'amg-78', name:'Churros sauce choco', group:'Dinette Fiesta', allergenes:['Gluten','Lait','Œufs','Soja']},{id:'amg-79', name:'Olives et gressin', group:'Dinette Garden Party', allergenes:['Gluten','Graines de sésame','Sulfites']},{id:'amg-80', name:'Saucisse de toulouse', group:'Dinette Garden Party', allergenes:['Sulfites']},{id:'amg-81', name:'Salade de tomates, fêta et pastèque', group:'Dinette Garden Party', allergenes:['Lait','Œufs']},{id:'amg-82', name:'Salade romaine', group:'Dinette Garden Party', allergenes:[]},{id:'amg-83', name:'Gaspacho andalou', group:'Dinette Garden Party', allergenes:['Gluten']},{id:'amg-84', name:'Picanha de bœuf', group:'Dinette Garden Party', allergenes:[]},{id:'amg-85', name:'Magret de canard', group:'Dinette Garden Party', allergenes:[]},{id:'amg-86', name:'Gambas', group:'Dinette Garden Party', allergenes:['Arachides','Crustacés','Mollusques','Graines de sésame','Sulfites']},{id:'amg-87', name:'Pomme de terre grenailles', group:'Dinette Garden Party', allergenes:['Lait']},{id:'amg-88', name:'Légumes grillés', group:'Dinette Garden Party', allergenes:[]},{id:'amg-89', name:'Brochettes de fruits', group:'Dinette Garden Party', allergenes:[]},{id:'amg-90', name:'Mousse au chocolat', group:'Dinette Garden Party', allergenes:['Lait','Œufs']},{id:'amg-91', name:'Taboulé de la Mama', group:'Dinette Garden Party', allergenes:['Gluten']}] }
     ]
   };
   const DEFAULT_PROCESS_INFOS = [
@@ -1154,7 +1156,7 @@ window.storage = {
     return d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
   }
 
-  const CURRENT_MIGRATION_VERSION = 4;
+  const CURRENT_MIGRATION_VERSION = 7;
   async function getMigrationVersion(){
     try {
       const res = await window.storage.get('migrationVersion', true);
@@ -2022,6 +2024,28 @@ window.storage = {
         } else if (pmFicheChanged){
           await saveProcessInfos(existingProcessInfos);
         }
+      } catch(e){}
+      try {
+        const existingAllergenes = await getAllergenesMenu();
+        const catMap = {};
+        existingAllergenes.categories.forEach(function(c){ catMap[c.id] = c; });
+        DEFAULT_ALLERGENES_MENU.categories.forEach(function(defaultCat){
+          if (!catMap[defaultCat.id]) return;
+          const alreadyImported = catMap[defaultCat.id].items.some(function(it){ return (it.id||'').indexOf('aet-')===0 || (it.id||'').indexOf('apl-')===0 || (it.id||'').indexOf('ade-')===0 || (it.id||'').indexOf('amg-')===0; });
+          if (!alreadyImported){
+            catMap[defaultCat.id].items = catMap[defaultCat.id].items.concat(JSON.parse(JSON.stringify(defaultCat.items)));
+          } else {
+            // Corrige les pizzas déjà importées avec l'ancien format (préfixe "Pizza " au lieu du groupe)
+            catMap[defaultCat.id].items.forEach(function(it){
+              const defaultMatch = defaultCat.items.find(function(d){ return d.id === it.id; });
+              if (defaultMatch && defaultMatch.group && !it.group){
+                it.name = defaultMatch.name;
+                it.group = defaultMatch.group;
+              }
+            });
+          }
+        });
+        await saveAllergenesMenu(existingAllergenes);
       } catch(e){}
       if (structureMigrationOk){
         await window.storage.set('migrationVersion', String(CURRENT_MIGRATION_VERSION), true);
@@ -3057,6 +3081,11 @@ window.storage = {
       state.eventSheets = eventSheets;
       state.rhEvents = rhEvents;
       state.screen = 'whatsup';
+      render();
+    }
+    else if (action === 'goAllergenesRead'){
+      state.allergenesMenu = await getAllergenesMenu();
+      state.screen = 'allergenes-read';
       render();
     }
     else if (action === 'goRemontees'){
@@ -4284,6 +4313,12 @@ window.storage = {
       }
       out += '</div>';
     });
+    out += '<div onclick="appAction(\'goAllergenesRead\')" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:2.5px solid var(--border-strong,#000);border-radius:14px;background:var(--surface-1);color:var(--text-primary);cursor:pointer;box-shadow:4px 4px 0 var(--border-strong,#000);margin-top:4px;transform:rotate(-0.5deg)">'+
+      iconBadge('event', '#E24B4A', '#fff')+
+      '<div style="flex:1"><div class="mama-title" style="font-size:15px">Allergènes</div>'+
+      '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">La carte et les allergènes présents</div></div>'+
+      icon('chevronRight',18)+
+    '</div>';
     out += '<div onclick="appAction(\'goRemontees\')" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:2.5px solid var(--border-strong,#000);border-radius:14px;background:var(--surface-1);color:var(--text-primary);cursor:pointer;box-shadow:4px 4px 0 var(--border-strong,#000);margin-top:4px;transform:rotate(0.5deg)">'+
       iconBadge('edit', '#FF9F43', '#fff')+
       '<div style="flex:1"><div class="mama-title" style="font-size:15px">L\'ascenseur</div>'+
@@ -5924,7 +5959,7 @@ window.storage = {
         out += '<div style="padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
           '<input type="number" min="1" max="'+cat.items.length+'" value="'+(idx+1)+'" onchange="appAction(\'moveAllergeneItemToPosition\', {catId:\''+cat.id+'\', index:'+idx+', position:parseInt(this.value,10)})" style="width:36px;padding:4px;text-align:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:12px;flex-shrink:0">'+
           '<div onclick="appAction(\'editAllergeneItem\',\''+it.id+'\')" style="flex:1;cursor:pointer">'+
-            '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(it.name)+'</div>'+
+            '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(it.name)+(it.group?' <span style="font-size:10px;font-weight:700;color:var(--text-accent,#7A5FE0);text-transform:uppercase">· '+esc(it.group)+'</span>':'')+'</div>'+
             (it.allergenes && it.allergenes.length ? '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">'+esc(it.allergenes.join(', '))+'</div>' : '')+
           '</div>'+
           '<span onclick="appAction(\'editAllergeneItem\',\''+it.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',15)+'</span>'+
@@ -6228,6 +6263,7 @@ window.storage = {
     else if (state.screen === 'process-infos') html = screenProcessInfos();
     else if (state.screen === 'bar-recettes-editor') html = screenBarRecettesEditor();
     else if (state.screen === 'allergenes-admin') html = screenAllergenesAdmin();
+    else if (state.screen === 'allergenes-read') html = screenAllergenesReadMamaGang();
     else if (state.screen === 'process-infos-read') html = screenProcessInfosReadView();
     else if (state.screen === 'recettes-read') html = screenRecettesReadView();
     else if (state.screen === 'admin-menu') html = screenAdminMenu();
@@ -6273,6 +6309,72 @@ window.storage = {
     }
   }
 
+  function buildAllergenesSearchAndListHtml(menu){
+    let out = '<div style="padding:8px 16px 0">'+
+      '<input id="pub-allergenes-search" type="text" placeholder="Rechercher un plat…" oninput="filterPublicAllergenesMenu(this.value)" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px">'+
+    '</div>';
+    out += '<div id="pub-allergenes-list" style="padding:4px 16px 24px">';
+    menu.categories.forEach(function(cat, catIdx){
+      out += '<details class="pub-allergene-cat" data-cat="'+cat.id+'" style="margin-top:'+(catIdx===0?'14px':'16px')+'">';
+      out += '<summary style="display:flex;align-items:baseline;gap:8px;border-bottom:2.5px solid var(--border-strong,#000);padding-bottom:8px;margin-bottom:2px;cursor:pointer;list-style:none">'+
+        '<h2 class="mama-title" style="font-size:19px;color:var(--text-primary);margin:0;flex:1">'+esc(cat.name)+'</h2>'+
+        '<span style="font-size:12px;color:var(--text-muted);font-weight:600">'+cat.items.length+' plat'+(cat.items.length>1?'s':'')+'</span>'+
+        '<span class="pub-allergene-chevron" style="color:var(--text-secondary);display:flex;align-items:center;transition:transform .15s">'+icon('chevronDown',18)+'</span>'+
+      '</summary>';
+      if (cat.items.length === 0){
+        out += '<div style="font-size:13px;color:var(--text-muted);padding:12px 0">Aucun plat pour l\'instant dans cette catégorie.</div>';
+      }
+      let openGroup = false;
+      cat.items.forEach(function(it, idx){
+        if (it.group !== cat.items[idx-1]?.group){
+          if (openGroup) out += '</div>';
+          if (it.group){
+            out += '<div class="pub-allergene-group" data-group="'+esc(it.group.toLowerCase())+'" style="margin-top:14px">';
+            out += '<div style="font-size:13px;font-weight:700;color:var(--text-accent,#7A5FE0);margin-bottom:2px;padding-left:2px">'+esc(it.group)+'</div>';
+            openGroup = true;
+          } else {
+            openGroup = false;
+          }
+        }
+        out += '<div class="pub-allergene-item" data-name="'+esc(it.name.toLowerCase())+'" style="padding:11px 2px;border-bottom:1px solid var(--border)">'+
+          '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">'+
+            '<div style="font-size:14.5px;font-weight:600;color:var(--text-primary)">'+esc(it.name)+'</div>'+
+          '</div>'+
+          ((it.allergenes && it.allergenes.length) ?
+            '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px">'+it.allergenes.map(function(a){
+              return '<span style="font-size:10.5px;padding:2px 8px;border-radius:999px;border:1.3px solid var(--text-danger,#A32D2D);color:var(--text-danger,#A32D2D);font-weight:600">'+esc(a)+'</span>';
+            }).join('')+'</div>'
+            : '<div style="font-size:12px;color:var(--text-muted);margin-top:3px">Aucun allergène déclaré</div>')+
+        '</div>';
+      });
+      if (openGroup) out += '</div>';
+      out += '</details>';
+    });
+    out += '</div>';
+    out += '<p id="pub-allergenes-empty" style="display:none;text-align:center;color:var(--text-muted);font-size:14px;padding:24px">Aucun plat ne correspond à ta recherche.</p>';
+    return out;
+  }
+
+  function screenAllergenesReadMamaGang(){
+    const menu = state.allergenesMenu || DEFAULT_ALLERGENES_MENU;
+    let out = '<div style="padding:16px 16px 0">'+
+      '<div onclick="appAction(\'goHome\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;font-size:14px;width:fit-content">'+icon('back',18)+'<span>Retour</span></div>'+
+    '</div>';
+    out += '<div style="padding:12px 16px 8px;text-align:center">'+
+      '<div class="copilote-script" style="font-size:34px">Copilote</div>'+
+      '<img src="'+LOGO_URI+'" alt="Mama Shelter Toulouse" style="width:70px;height:70px;object-fit:contain;display:block;margin:6px auto 0">'+
+      '<h1 class="mama-title" style="font-size:18px;margin:14px 0 2px;color:var(--text-primary)">Allergènes</h1>'+
+      '<p style="color:var(--text-secondary);font-size:13px;margin:0">La carte et les allergènes présents dans nos plats</p>'+
+    '</div>';
+    out += buildAllergenesSearchAndListHtml(menu);
+    out += '<div style="margin:8px 16px 24px;padding:14px;border-radius:10px;background:var(--surface-0);border:1.5px solid var(--border)">'+
+      '<p style="color:var(--text-secondary);font-size:12px;margin:0 0 8px;line-height:1.5">Liste communiquée à titre indicatif. Malgré toutes nos précautions, un risque de contamination croisée entre les plats ne peut jamais être totalement exclu.</p>'+
+      '<p style="color:var(--text-secondary);font-size:12px;margin:0;line-height:1.5;font-weight:600">En cas d\'allergie signalée par un guest, préviens un manager avant de passer commande.</p>'+
+    '</div>';
+    out += bottomNav('home');
+    return out;
+  }
+
   async function renderPublicAllergenesPage(){
     const root = document.getElementById('app');
     const menu = await getAllergenesMenu();
@@ -6282,51 +6384,43 @@ window.storage = {
       '<h1 class="mama-title" style="font-size:18px;margin:14px 0 2px;color:var(--text-primary)">Allergènes</h1>'+
       '<p style="color:var(--text-secondary);font-size:13px;margin:0">La carte et les allergènes présents dans nos plats</p>'+
     '</div>';
-    out += '<div style="padding:8px 16px 0">'+
-      '<input id="pub-allergenes-search" type="text" placeholder="Rechercher un plat…" oninput="filterPublicAllergenesMenu(this.value)" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px">'+
+    out += buildAllergenesSearchAndListHtml(menu);
+    out += '<div style="margin:8px 16px 24px;padding:14px;border-radius:10px;background:var(--surface-0);border:1.5px solid var(--border)">'+
+      '<p style="color:var(--text-secondary);font-size:12px;margin:0 0 8px;line-height:1.5">Liste communiquée à titre indicatif. Malgré toutes nos précautions, un risque de contamination croisée entre les plats ne peut jamais être totalement exclu.</p>'+
+      '<p style="color:var(--text-secondary);font-size:12px;margin:0;line-height:1.5;font-weight:600">En cas d\'allergie, merci de te signaler auprès de notre équipe avant de passer commande.</p>'+
     '</div>';
-    out += '<div id="pub-allergenes-list" style="padding:8px 16px 24px;display:flex;flex-direction:column;gap:10px">';
-    menu.categories.forEach(function(cat){
-      out += '<div class="pub-allergene-cat" data-cat="'+cat.id+'">';
-      out += '<div class="mama-title" style="font-size:16px;color:var(--text-accent,#E8432B);margin:10px 0 6px">'+esc(cat.name)+'</div>';
-      if (cat.items.length === 0){
-        out += '<div style="font-size:13px;color:var(--text-muted);padding:8px 0">Aucun plat pour l\'instant dans cette catégorie.</div>';
-      }
-      cat.items.forEach(function(it){
-        out += '<div class="pub-allergene-item" data-name="'+esc(it.name.toLowerCase())+'" style="padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);margin-bottom:8px">'+
-          '<div style="font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(it.name)+'</div>'+
-          ((it.allergenes && it.allergenes.length) ?
-            '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px">'+it.allergenes.map(function(a){
-              return '<span style="font-size:11px;padding:3px 9px;border-radius:999px;background:var(--bg-danger,#FCEBEB);color:var(--text-danger,#A32D2D);font-weight:700">'+esc(a)+'</span>';
-            }).join('')+'</div>'
-            : '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">Aucun allergène déclaré</div>')+
-        '</div>';
-      });
-      out += '</div>';
-    });
-    out += '</div>';
-    out += '<p id="pub-allergenes-empty" style="display:none;text-align:center;color:var(--text-muted);font-size:14px;padding:24px">Aucun plat ne correspond à ta recherche.</p>';
-    out += '<p style="text-align:center;color:var(--text-muted);font-size:11px;padding:8px 24px 24px">Liste communiquée à titre indicatif — n\'hésite pas à nous solliciter pour toute question.</p>';
     root.innerHTML = out;
   }
   window.filterPublicAllergenesMenu = function(query){
     const q = (query||'').trim().toLowerCase();
-    const items = document.querySelectorAll('.pub-allergene-item');
     const cats = document.querySelectorAll('.pub-allergene-cat');
+    const groups = document.querySelectorAll('.pub-allergene-group');
     let anyVisible = false;
     cats.forEach(function(catEl){
+      const itemEls = catEl.querySelectorAll('.pub-allergene-item');
       let catHasVisible = false;
-      catEl.querySelectorAll('.pub-allergene-item').forEach(function(itemEl){
+      itemEls.forEach(function(itemEl){
         const match = !q || (itemEl.getAttribute('data-name')||'').indexOf(q) >= 0;
         itemEl.style.display = match ? '' : 'none';
         if (match) catHasVisible = true;
       });
-      const hasAnyItem = catEl.querySelectorAll('.pub-allergene-item').length > 0;
-      catEl.style.display = (hasAnyItem && catHasVisible) ? '' : 'none';
-      if (catHasVisible) anyVisible = true;
+      if (!q){
+        catEl.style.display = '';
+        catEl.open = false;
+        anyVisible = true;
+      } else {
+        catEl.style.display = catHasVisible ? '' : 'none';
+        catEl.open = catHasVisible;
+        if (catHasVisible) anyVisible = true;
+      }
+    });
+    groups.forEach(function(groupEl){
+      if (!q){ groupEl.style.display = ''; return; }
+      const visibleCount = Array.prototype.filter.call(groupEl.querySelectorAll('.pub-allergene-item'), function(el){ return el.style.display !== 'none'; }).length;
+      groupEl.style.display = visibleCount > 0 ? '' : 'none';
     });
     const emptyMsg = document.getElementById('pub-allergenes-empty');
-    if (emptyMsg) emptyMsg.style.display = anyVisible ? 'none' : 'block';
+    if (emptyMsg) emptyMsg.style.display = (!q || anyVisible) ? 'none' : 'block';
   };
 
   const publicUrlParams = new URLSearchParams(window.location.search);
