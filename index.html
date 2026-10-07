@@ -59,40 +59,29 @@
 <body>
 <div style="position:relative;min-height:100vh;padding:24px 12px;box-sizing:border-box;display:flex;justify-content:center;background:#2A2A2A;"><div style="position:absolute;inset:0;background:rgba(15,15,20,0.35);"></div><div id="app" style="position:relative;width:100%;max-width:480px;background:var(--surface-0);background-image:radial-gradient(circle, rgba(26,26,26,0.08) 1.2px, transparent 1.2px);background-size:18px 18px;border-radius:22px;box-shadow:0 12px 40px rgba(0,0,0,0.45);overflow:hidden;font-family:var(--font-sans, sans-serif);"></div></div>
 <script>
-// ===== Connexion à la base de données Supabase (remplace le stockage Claude) =====
-const SUPABASE_URL = 'https://sncwehwxrbntcyklkshh.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_OW_O-vzSCHm_mM1Zu-ffvw_sjAs8zNv';
+const SUPABASE_URL='https://sncwehwxrbntcyklkshh.supabase.co';
+const SUPABASE_KEY='sb_publishable_OW_O-vzSCHm_mM1Zu-ffvw_sjAs8zNv';
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
 window.storage = {
-  get: async function(key, shared){
-    const { data, error } = await supabaseClient
-      .from('app_storage')
-      .select('value')
-      .eq('key', key)
-      .maybeSingle();
+  async get(key){
+    const { data, error } = await supabaseClient.from('app_storage').select('value').eq('key', key).maybeSingle();
     if (error) throw error;
     if (!data) throw new Error('not found');
-    return { key: key, value: data.value, shared: shared };
+    return { key: key, value: data.value };
   },
-  set: async function(key, value, shared){
-    const { error } = await supabaseClient
-      .from('app_storage')
-      .upsert({ key: key, value: value }, { onConflict: 'key' });
+  async set(key, value){
+    const { error } = await supabaseClient.from('app_storage').upsert({ key: key, value: value }, { onConflict: 'key' });
     if (error) throw error;
-    return { key: key, value: value, shared: shared };
+    return { key: key, value: value };
   },
-  delete: async function(key, shared){
-    const { error } = await supabaseClient
-      .from('app_storage')
-      .delete()
-      .eq('key', key);
+  async delete(key){
+    const { error } = await supabaseClient.from('app_storage').delete().eq('key', key);
     if (error) throw error;
-    return { key: key, deleted: true, shared: shared };
+    return { key: key, deleted: true };
   }
 };
-// ===== Fin de l'adaptateur Supabase =====
-
+</script>
+<script>
 (function(){
   const DEFAULT_BAR_RECETTES = [];
   const ALLERGENES_LIST = ['Gluten','Crustacés','Œufs','Poissons','Arachides','Soja','Lait','Fruits à coque','Céleri','Moutarde','Graines de sésame','Sulfites','Lupin','Mollusques'];
@@ -970,6 +959,21 @@ window.storage = {
               {id:'froof-21', label:'Plus rien ne traîne au sol ou sur les plans de travail', obligatoire:true, group:'Arrière'},
               {id:'froof-22', label:'Le réassort est fait : serviettes, vichys, sacs Elis', obligatoire:true, group:'Arrière'}
           ]}
+      ]},
+      { id:'night', name:'Night', icon:'moon', sublieux: [
+          { id:'night-hebdo', name:'Tâches hebdomadaires', icon:'moon', type:'checklist', tasks:[
+              {id:'nwk-1', label:'Remplir le sel et le poivre', obligatoire:true},
+              {id:'nwk-2', label:'Remplir les sucrières', obligatoire:true},
+              {id:'nwk-3', label:'Remettre de l\'ordre dans le local vélo', obligatoire:true},
+              {id:'nwk-4', label:'Nettoyer les chariots petit-déjeuner', obligatoire:true},
+              {id:'nwk-5', label:'Ranger la réserve atelier', obligatoire:true},
+              {id:'nwk-6', label:'Réassortir carnets, stylos, Vichy', obligatoire:true},
+              {id:'nwk-7', label:'Descendre la vaisselle en trop du roof au restaurant', obligatoire:true},
+              {id:'nwk-8', label:'Nettoyer, vérifier et nettoyer si nécessaire tous les mugs et les Duralex', obligatoire:true},
+              {id:'nwk-9', label:'Nettoyer les brûleurs', obligatoire:true},
+              {id:'nwk-10', label:'Re-nettoyer le matériel du petit-déjeuner', obligatoire:true}
+          ]},
+          { id:'night-annexes', name:'Tâches annexes', icon:'moon', type:'checklist', tasks:[] }
       ]}
     ]
   };
@@ -1002,7 +1006,9 @@ window.storage = {
     euro: '<path d="M17 6.5a7 7 0 100 11"/><path d="M3.5 10h11"/><path d="M3.5 14h9"/>',
     mask: '<path d="M4 9c0-3.3 3.6-6 8-6s8 2.7 8 6c0 6.2-3.2 11-8 11S4 15.2 4 9z"/><circle cx="9" cy="10" r="1.1"/><circle cx="15" cy="10" r="1.1"/><path d="M9 15c1.2 1 4.8 1 6 0"/>',
     heart: '<path d="M12 21s-7-4.35-9.5-8.5C.7 8.9 3 5.3 6.6 5.3c2 0 3.6 1.2 5.4 3 1.8-1.8 3.4-3 5.4-3 3.6 0 5.9 3.6 4.1 7.2C19 16.65 12 21 12 21z"/>',
-    tool: '<path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.6 2.6-2.7-2.7 2.6-2.6z"/>'
+    tool: '<path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.6 2.6-2.7-2.7 2.6-2.6z"/>',
+    moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+    clipboard: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>'
   };
   function icon(name, size){
     size = size || 20;
@@ -1077,6 +1083,14 @@ window.storage = {
     rhLoginCodeError: false,
     techniqueUnlocked: false,
     techniqueLoginCodeError: false,
+    nightUnlocked: false,
+    nightLoginCodeError: false,
+    nightProgress: {},
+    nightEndShift: null,
+    nightEndTime: '',
+    nightEndError: false,
+    remonteeFromNight: false,
+    nightNewChecklistDraft: '',
     processInfos: [],
     processInfoEditingId: null,
     processInfoViewingId: null,
@@ -1151,12 +1165,54 @@ window.storage = {
   // Sous-lieux dont la progression de checklist doit être partagée sur toute la semaine
   // (plutôt que remise à zéro chaque jour), avec reset automatique chaque mardi.
   const WEEKLY_SHARED_PROGRESS_SUBLIEUX = ['nettoyage-hebdo'];
+  // Semaine du Night : du samedi au mercredi (jours travaillés). La checklist est remise à zéro le jeudi
+  // à midi : une fois la nuit du mercredi terminée (elle déborde après minuit, une remise à zéro à minuit
+  // ferait perdre la progression en pleine nuit). La nouvelle liste est ainsi prête pour le samedi.
+  // Dates en heure locale (pas UTC).
+  const NIGHT_RESET_DAY = 4;     // jeudi
+  const NIGHT_RESET_HOUR = 12;   // midi
+  function localDateKey(d){
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  function nightCycleStartDate(){
+    // On recule de 12 h pour que « le jour » change à midi, puis on remonte jusqu'au jeudi.
+    const d = new Date(Date.now() - NIGHT_RESET_HOUR*3600*1000);
+    d.setHours(0,0,0,0);
+    d.setDate(d.getDate() - ((d.getDay() - NIGHT_RESET_DAY + 7) % 7));
+    return d;
+  }
+  function nightWeekKey(){ return localDateKey(nightCycleStartDate()); }
+  function nightWeekRangeLabel(){
+    const start = nightCycleStartDate();
+    const sat = new Date(start); sat.setDate(start.getDate() + 2);
+    const wed = new Date(start); wed.setDate(start.getDate() + 6);
+    function fmt(d){ return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'); }
+    return 'du samedi '+fmt(sat)+' au mercredi '+fmt(wed);
+  }
+  // Jeudi (après la remise à zéro) et vendredi : la nouvelle liste est prête et démarre samedi.
+  function isNightWeekFresh(){
+    const start = nightCycleStartDate();
+    const today = new Date(); today.setHours(0,0,0,0);
+    const days = Math.round((today - start) / 86400000);
+    return days >= 0 && days < 2;
+  }
+  function categoryIdOfSublieu(subId){
+    const cats = (state.structure && state.structure.categories) || [];
+    for (let i=0; i<cats.length; i++){
+      if ((cats[i].sublieux||[]).some(function(s){ return s.id === subId; })) return cats[i].id;
+    }
+    return null;
+  }
+  function isNightSublieu(subId){ return categoryIdOfSublieu(subId) === 'night'; }
+  function isWeeklyChecklist(subId){
+    return WEEKLY_SHARED_PROGRESS_SUBLIEUX.indexOf(subId) >= 0 || isNightSublieu(subId);
+  }
   function nowLabel(){
     const d = new Date();
     return d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
   }
 
-  const CURRENT_MIGRATION_VERSION = 7;
+  const CURRENT_MIGRATION_VERSION = 10;
   async function getMigrationVersion(){
     try {
       const res = await window.storage.get('migrationVersion', true);
@@ -1348,6 +1404,23 @@ window.storage = {
       structure.categories = structure.categories.filter(c=>c.id!=='checkmanager');
       await window.storage.set('structure', JSON.stringify(structure), true);
     }
+    // Migration : ajouter la catégorie Night (checklists hebdomadaires de l'accès Night).
+    if (!structure.categories.some(c=>c.id==='night')){
+      structure.categories.push(JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='night'))));
+      await window.storage.set('structure', JSON.stringify(structure), true);
+    }
+    // Migration : remplir la catégorie Night avec la checklist hebdomadaire de départ si elle est vide.
+    const nightCatSeed = structure.categories.find(c=>c.id==='night');
+    if (nightCatSeed && (nightCatSeed.sublieux||[]).length === 0){
+      nightCatSeed.sublieux = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='night').sublieux));
+      await window.storage.set('structure', JSON.stringify(structure), true);
+    }
+    // Migration : ajouter la checklist « Tâches annexes » à côté de « Tâches hebdomadaires ».
+    const nightCatAnnexes = structure.categories.find(c=>c.id==='night');
+    if (nightCatAnnexes && nightCatAnnexes.sublieux.some(s=>s.id==='night-hebdo') && !nightCatAnnexes.sublieux.some(s=>s.id==='night-annexes')){
+      nightCatAnnexes.sublieux.push(JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='night').sublieux.find(s=>s.id==='night-annexes'))));
+      await window.storage.set('structure', JSON.stringify(structure), true);
+    }
     // Migration : ajouter la catégorie Fermeture (RDC / Roof) réservée aux managers.
     if (!structure.categories.some(c=>c.id==='fermeture')){
       structure.categories.push(JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='fermeture'))));
@@ -1415,6 +1488,7 @@ window.storage = {
     return Promise.resolve();
   }
   function progressKey(sublieuId){
+    if (isNightSublieu(sublieuId)) return 'progress:'+sublieuId+':nightweek-'+nightWeekKey();
     return WEEKLY_SHARED_PROGRESS_SUBLIEUX.indexOf(sublieuId) >= 0
       ? 'progress:'+sublieuId+':week-'+weekKeyTuesday()
       : 'progress:'+sublieuId+':'+todayKey();
@@ -1425,7 +1499,7 @@ window.storage = {
       const p = JSON.parse(res.value);
       // Sécurité : si une checklist est encore marquée "validée" (résidu d'un ancien
       // enregistrement), on la remet à zéro immédiatement au lieu de l'afficher cochée.
-      if (p.validated){
+      if (p.validated && !isNightSublieu(sublieuId)){
         const resetProgress = { checked: [], operator: null, validated: false, validatedAt: null, comment: '' };
         await setProgress(sublieuId, resetProgress);
         return resetProgress;
@@ -1808,6 +1882,24 @@ window.storage = {
     '</div>';
   }
 
+  // Nombre de tâches cochées parmi celles qui existent encore (si un manager supprime une tâche
+  // déjà cochée en cours de semaine, elle ne doit plus compter).
+  function countChecked(sub, p){
+    const ids = (p && p.checked) || [];
+    return sub.tasks.filter(function(t){ return ids.indexOf(t.id) >= 0; }).length;
+  }
+  async function getNightEndShift(){
+    try { const res = await window.storage.get('nightEndShift', true); return JSON.parse(res.value); }
+    catch(e){ return null; }
+  }
+  async function loadNightProgress(){
+    const map = {};
+    try { state.nightEndShift = await getNightEndShift(); } catch(e){}
+    const nightCat = state.structure && state.structure.categories.find(function(c){ return c.id === 'night'; });
+    if (!nightCat) return map;
+    await Promise.all(nightCat.sublieux.map(async function(s){ map[s.id] = await getProgress(s.id); }));
+    return map;
+  }
   async function doValidateChecklist(){
     state.isSubmitting = true;
     state.submittingMessage = 'Envoi de la checklist...';
@@ -1829,21 +1921,32 @@ window.storage = {
       operator: operatorAtValidation,
       when: validatedAt,
       comment: p.comment || '',
+      weekLabel: (cat.id === 'night') ? nightWeekRangeLabel() : undefined,
       tasksSnapshot: tasksSnapshot
     });
-    // La checklist est remise à zéro systématiquement une fois validée,
-    // pour pouvoir être refaite dans la journée si la salle/le poste ressert.
-    const resetProgress = { checked: [], operator: null, validated: false, validatedAt: null, comment: '' };
-    await setProgress(subId, resetProgress);
-    state.progress[subId] = resetProgress;
-    state.historique = await getHistorique();
-    state.screen = (state.categoryId === 'fermeture') ? 'fermeture' : 'home';
+    if (state.categoryId === 'night'){
+      // Night : la checklist reste « validée » jusqu'à la fin de la semaine (reset automatique le jeudi à midi).
+      const validatedProgress = { checked: p.checked.slice(), operator: operatorAtValidation, validated: true, validatedAt: validatedAt, comment: p.comment || '' };
+      await setProgress(subId, validatedProgress);
+      state.progress[subId] = validatedProgress;
+      state.historique = await getHistorique();
+      state.nightProgress = await loadNightProgress();
+      state.screen = 'night';
+    } else {
+      // La checklist est remise à zéro systématiquement une fois validée,
+      // pour pouvoir être refaite dans la journée si la salle/le poste ressert.
+      const resetProgress = { checked: [], operator: null, validated: false, validatedAt: null, comment: '' };
+      await setProgress(subId, resetProgress);
+      state.progress[subId] = resetProgress;
+      state.historique = await getHistorique();
+      state.screen = (state.categoryId === 'fermeture') ? 'fermeture' : 'home';
+    }
     state.isSubmitting = false;
     render();
   }
 
   const SESSION_SNAPSHOT_KEY = 'copilote_session_snapshot';
-  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','remonteeRecipient','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','entertainmentEditingId','entFormDate','entFormType','entFormInfo','cameFromManagerMenu'];
+  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','entertainmentEditingId','entFormDate','entFormType','entFormInfo','cameFromManagerMenu'];
   function compressImageDataUrl(dataUrl, maxWidth, quality){
     return new Promise(function(resolve){
       try {
@@ -1882,7 +1985,7 @@ window.storage = {
       const snap = JSON.parse(raw);
       // Une sauvegarde de plus de 10 minutes est jugée trop ancienne pour être restaurée automatiquement.
       if (!snap._ts || (Date.now() - snap._ts) > 10*60*1000) return false;
-      const wasLoggedIn = snap.managerUnlocked || snap.economeUnlocked || snap.entertainmentUnlocked || snap.eventsUnlocked || snap.rhUnlocked || snap.techniqueUnlocked || snap.adminUnlocked || snap.name;
+      const wasLoggedIn = snap.managerUnlocked || snap.economeUnlocked || snap.entertainmentUnlocked || snap.eventsUnlocked || snap.rhUnlocked || snap.techniqueUnlocked || snap.nightUnlocked || snap.adminUnlocked || snap.name;
       if (!wasLoggedIn) return false;
       SESSION_SNAPSHOT_FIELDS.forEach(function(f){ if (snap[f] !== undefined) state[f] = snap[f]; });
       // Recharge les données nécessaires pour que l'écran restauré (ex: modification d'une fiche) fonctionne bien.
@@ -1895,8 +1998,33 @@ window.storage = {
       if (state.screen === 'allergenes-admin' && state.adminUnlocked){
         state.allergenesMenu = await getAllergenesMenu();
       }
+      if (state.screen === 'checklist' && state.sublieuId){
+        // La progression n'est pas sauvegardée avec la session : on la recharge, sinon l'écran plante.
+        const restoredProgress = await getProgress(state.sublieuId);
+        if (!restoredProgress.operator){
+          restoredProgress.operator = state.name || (state.nightUnlocked ? 'Night' : '');
+        }
+        state.progress[state.sublieuId] = restoredProgress;
+      }
+      if (state.screen === 'night' && state.nightUnlocked){
+        state.nightProgress = await loadNightProgress();
+      }
       return true;
     } catch(e){ return false; }
+  }
+  async function finishInitRender(){
+    await restoreSessionSnapshot();
+    state.loading = false;
+    try {
+      render();
+    } catch(renderErr){
+      console.error('Impossible de restaurer l\'écran précédent, retour à la connexion :', renderErr);
+      try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(SESSION_SNAPSHOT_KEY); } catch(e){}
+      state.name=''; state.managerUnlocked=false; state.economeUnlocked=false; state.entertainmentUnlocked=false;
+      state.eventsUnlocked=false; state.rhUnlocked=false; state.techniqueUnlocked=false; state.nightUnlocked=false;
+      state.adminUnlocked=false; state.cameFromManagerMenu=false; state.loginStep='simple'; state.screen='login';
+      render();
+    }
   }
   async function init(){
     if (typeof window.storage === 'undefined'){
@@ -1917,9 +2045,7 @@ window.storage = {
         // Chemin rapide : tout est déjà à jour, on saute toutes les vérifications
         // de migration (gain de temps important à chaque connexion).
         state.structure = structureRaw;
-        await restoreSessionSnapshot();
-        state.loading = false;
-        render();
+        await finishInitRender();
         return;
       }
       let structureMigrationOk = true;
@@ -2050,9 +2176,7 @@ window.storage = {
       if (structureMigrationOk){
         await window.storage.set('migrationVersion', String(CURRENT_MIGRATION_VERSION), true);
       }
-      await restoreSessionSnapshot();
-      state.loading = false;
-      render();
+      await finishInitRender();
     } catch(e){
       document.getElementById('app').innerHTML =
         '<div style="padding:40px 24px;text-align:center">'+
@@ -2119,6 +2243,90 @@ window.storage = {
     }
     else if (action === 'chooseRH'){
       state.loginStep = 'rh-code'; state.rhLoginCodeError = false; state.screen = 'login'; render();
+    }
+    else if (action === 'chooseNight'){
+      state.loginStep = 'night-code'; state.nightLoginCodeError = false; state.screen = 'login'; render();
+    }
+    else if (action === 'submitNightLoginCode'){
+      const input = document.getElementById('night-login-code');
+      const code = (input.value||'').trim();
+      const usersNight = await getAccessUsers();
+      const matchNight = findAccessUser(usersNight, 'night', code);
+      if (matchNight || code === '3333'){
+        state.nightLoginCodeError = false;
+        state.nightUnlocked = true;
+        if (matchNight) state.name = matchNight.name;
+        state.structure = await getStructureRaw();
+        state.nightProgress = await loadNightProgress();
+        state.screen = 'night';
+      } else {
+        state.nightLoginCodeError = true;
+      }
+      render();
+    }
+    else if (action === 'goNightEndShift'){
+      state.nightEndError = false;
+      state.nightEndTime = '';
+      state.screen = 'night-endshift';
+      render();
+    }
+    else if (action === 'submitNightEndShift'){
+      const t = (state.nightEndTime || '').trim();
+      if (!/^\d{2}:\d{2}$/.test(t)){ state.nightEndError = true; render(); return; }
+      state.isSubmitting = true;
+      state.submittingMessage = 'Envoi de ton heure de départ...';
+      render();
+      const author = state.name || 'Night';
+      const message = 'Fin de shift Night : départ à ' + t.replace(':','h') + '.';
+      const list = await getFeedbacks();
+      list.unshift({
+        id: 'fb-'+Date.now(),
+        message: message,
+        recipients: ['managers'],
+        location: 'Night',
+        photo: null,
+        author: author,
+        when: nowLabel()
+      });
+      await saveFeedbacks(list.slice(0,2000));
+      await incrementFeedbackCounts(['managers']);
+      const rec = { time: t, dateKey: localDateKey(new Date()), author: author, when: nowLabel() };
+      await window.storage.set('nightEndShift', JSON.stringify(rec), true);
+      state.nightEndShift = rec;
+      state.nightEndTime = '';
+      state.isSubmitting = false;
+      state.screen = 'night';
+      render();
+    }
+    else if (action === 'goNightLift'){
+      state.feedbackSent = false;
+      state.feedbackError = false;
+      state.remonteeRecipient = 'managers';
+      state.remonteeFromNight = true;
+      state.remonteeLocation = null;
+      state.remonteeLocationManual = false;
+      state.remonteePhoto = null;
+      state.remonteeMessageDraft = '';
+      state.screen = 'remontees-form';
+      render();
+    }
+    else if (action === 'goNight'){
+      if (!state.nightUnlocked){ state.loginStep = 'simple'; state.screen = 'login'; render(); return; }
+      state.structure = await getStructureRaw();
+      state.nightProgress = await loadNightProgress();
+      state.screen = 'night';
+      render();
+    }
+    else if (action === 'addNightChecklist'){
+      const input = document.getElementById('new-night-checklist');
+      const name = (input && input.value || '').trim();
+      if (!name){ render(); return; }
+      const nightCat = findCategory('night');
+      if (!nightCat){ render(); return; }
+      nightCat.sublieux.push({ id:'night-'+Date.now(), name: name, icon:'moon', type:'checklist', tasks:[] });
+      await saveStructure(state.structure);
+      state.nightNewChecklistDraft = '';
+      render();
     }
     else if (action === 'chooseTechnique'){
       state.loginStep = 'technique-code'; state.techniqueLoginCodeError = false; state.screen = 'login'; render();
@@ -2576,7 +2784,7 @@ window.storage = {
       }
     }
     else if (action === 'logout'){
-      state.name=''; state.managerUnlocked=false; state.economeUnlocked=false; state.entertainmentUnlocked=false; state.eventsUnlocked=false; state.rhUnlocked=false; state.adminUnlocked=false; state.techniqueUnlocked=false; state.cameFromManagerMenu=false; state.loginStep='simple'; state.screen='login';
+      state.name=''; state.managerUnlocked=false; state.economeUnlocked=false; state.entertainmentUnlocked=false; state.eventsUnlocked=false; state.rhUnlocked=false; state.adminUnlocked=false; state.techniqueUnlocked=false; state.nightUnlocked=false; state.cameFromManagerMenu=false; state.loginStep='simple'; state.screen='login';
       try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(SESSION_SNAPSHOT_KEY); } catch(e){}
       render();
     }
@@ -3089,6 +3297,7 @@ window.storage = {
       render();
     }
     else if (action === 'goRemontees'){
+      state.remonteeFromNight = false;
       state.feedbackSent = false;
       state.feedbackError = false;
       state.remonteeRecipient = null;
@@ -3106,6 +3315,13 @@ window.storage = {
       render();
     }
     else if (action === 'backToRemonteeChoice'){
+      if (state.remonteeFromNight){
+        state.remonteeFromNight = false;
+        state.remonteeRecipient = null;
+        state.screen = 'night';
+        render();
+        return;
+      }
       state.remonteeRecipient = null;
       state.screen = 'remontees-choose';
       render();
@@ -3169,7 +3385,7 @@ window.storage = {
         recipients: recipientsList,
         location: location,
         photo: (recipient === 'technique') ? (state.remonteePhoto || null) : null,
-        author: state.name,
+        author: state.name || (state.nightUnlocked ? 'Night' : ''),
         when: nowLabel()
       });
       await saveFeedbacks(list.slice(0,2000));
@@ -3749,7 +3965,7 @@ window.storage = {
       state.weeklyIncompleteError = false;
       state.progress[payload.subId] = await getProgress(payload.subId);
       if (!state.progress[payload.subId].operator){
-        state.progress[payload.subId].operator = state.name;
+        state.progress[payload.subId].operator = state.name || (state.nightUnlocked ? 'Night' : '');
       }
       state.screen = 'checklist';
       render();
@@ -3933,12 +4149,18 @@ window.storage = {
     }
     else if (action === 'backToSublieux'){
       state.structure = await getStructureRaw();
-      state.screen = (state.categoryId === 'fermeture') ? 'fermeture' : 'home';
+      if (state.categoryId === 'night' && state.nightUnlocked){
+        state.nightProgress = await loadNightProgress();
+        state.screen = 'night';
+      } else {
+        state.screen = (state.categoryId === 'fermeture') ? 'fermeture' : 'home';
+      }
       render();
     }
     else if (action === 'toggleTask'){
       const subId = state.sublieuId;
       const p = state.progress[subId];
+      if (p.validated) return;
       const idx = p.checked.indexOf(payload);
       if (idx>=0) p.checked.splice(idx,1); else p.checked.push(payload);
       render();
@@ -3955,9 +4177,9 @@ window.storage = {
       const subId = state.sublieuId;
       const sub = findSublieu(state.categoryId, subId);
       const p = state.progress[subId];
-      const allChecked = sub.tasks.length > 0 && p.checked.length === sub.tasks.length;
+      const allChecked = sub.tasks.length > 0 && countChecked(sub, p) === sub.tasks.length;
       if (!allChecked){
-        if (WEEKLY_SHARED_PROGRESS_SUBLIEUX.indexOf(subId) >= 0){
+        if (isWeeklyChecklist(subId)){
           // Pas de "valider quand même" pour une checklist à progression partagée sur la semaine :
           // tant qu'elle n'est pas complète, elle reste simplement en attente.
           state.weeklyIncompleteError = true;
@@ -4080,9 +4302,14 @@ window.storage = {
       return '<div onclick="appAction(\''+action+'\')" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 0;cursor:pointer;color:'+color+'">'+
         icon(ic,22)+'<span style="font-size:12px">'+label+'</span></div>';
     }
-    let items = item('home','Accueil','home','goHome');
-    if (state.managerUnlocked){
-      items += item('menu','Menu','settings','goManagerMenu');
+    let items;
+    if (state.nightUnlocked && !state.managerUnlocked && !state.adminUnlocked){
+      items = item('home','Ma liste','moon','goNight');
+    } else {
+      items = item('home','Accueil','home','goHome');
+      if (state.managerUnlocked){
+        items += item('menu','Menu','settings','goManagerMenu');
+      }
     }
     return '<div style="display:flex;border-top:1px solid var(--border);margin-top:12px">'+items+'</div>';
   }
@@ -4100,31 +4327,32 @@ window.storage = {
       {action:'chooseEvents', label:'Events', color:'#7A5FE0', fg:'#fff', icon:'event'},
       {action:'chooseRH', label:'RH', color:'#3FAE6A', fg:'#fff', icon:'heart'},
       {action:'chooseTechnique', label:'Techn.', color:'#FF9F43', fg:'#fff', icon:'tool'},
+      {action:'chooseNight', label:'Night', color:'#2F3E7E', fg:'#fff', icon:'moon'},
       {action:'chooseAdmin', label:'Admin', color:'#1A1A1A', fg:'#fff', icon:'lock'}
     ];
     const quickRolesHtml = quickRoles.map(function(r){
-      return '<div onclick="appAction(\''+r.action+'\')" style="flex:0 0 60px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">'+
-        '<div style="width:44px;height:44px;border-radius:50%;background:'+r.color+';color:'+r.fg+';border:2px solid var(--border-strong,#000);display:flex;align-items:center;justify-content:center">'+icon(r.icon,26)+'</div>'+
-        '<span style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.2px">'+r.label+'</span>'+
+      return '<div onclick="appAction(\''+r.action+'\')" style="flex:0 0 62px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer">'+
+        '<div style="width:42px;height:42px;border-radius:50%;background:'+r.color+';color:'+r.fg+';border:2px solid var(--border-strong,#000);display:flex;align-items:center;justify-content:center">'+icon(r.icon,26)+'</div>'+
+        '<span style="font-size:11px;color:var(--text-secondary);font-weight:700;text-transform:uppercase;letter-spacing:.2px">'+r.label+'</span>'+
       '</div>';
     }).join('');
-    return '<div style="padding:48px 20px 32px;text-align:center">'+
-      '<div style="width:132px;height:132px;margin:0 auto;border-radius:50%;border:3px dashed rgba(232,67,43,0.35);display:flex;align-items:center;justify-content:center">'+
-        '<div style="width:104px;height:104px;border-radius:50%;background:#fff;border:3px solid var(--border-strong,#000);display:flex;align-items:center;justify-content:center;box-shadow:4px 4px 0 var(--border-strong,#000);overflow:hidden">'+
+    return '<div style="padding:18px 20px 12px;text-align:center">'+
+      '<div style="width:92px;height:92px;margin:0 auto;border-radius:50%;border:3px dashed rgba(232,67,43,0.35);display:flex;align-items:center;justify-content:center">'+
+        '<div style="width:74px;height:74px;border-radius:50%;background:#fff;border:3px solid var(--border-strong,#000);display:flex;align-items:center;justify-content:center;box-shadow:4px 4px 0 var(--border-strong,#000);overflow:hidden">'+
           '<img src="'+LOGO_URI+'" alt="Mama Shelter Toulouse" style="width:100%;height:100%;object-fit:cover">'+
         '</div>'+
       '</div>'+
-      '<div class="copilote-script" style="font-size:44px;margin-top:10px;line-height:1">'+letters+'</div>'+
+      '<div class="copilote-script" style="font-size:36px;margin-top:6px;line-height:1">'+letters+'</div>'+
       '<div style="font-size:12px;color:var(--text-muted);letter-spacing:2.5px;text-transform:uppercase;margin-top:-2px;font-weight:600">Mama Shelter Toulouse</div>'+
-      '<div style="max-width:300px;margin:28px auto 0;padding:24px 22px;background:#1E5FA8;border:2.5px solid var(--border-strong,#000);border-radius:18px;box-shadow:5px 5px 0 var(--border-strong,#000);text-align:left;transform:rotate(-0.4deg)">'+
+      '<div style="max-width:300px;margin:14px auto 0;padding:16px 20px;background:#1E5FA8;border:2.5px solid var(--border-strong,#000);border-radius:18px;box-shadow:5px 5px 0 var(--border-strong,#000);text-align:left;transform:rotate(-0.4deg)">'+
         '<h1 class="mama-title" style="font-size:17px;font-weight:800;margin:0 0 4px;text-align:center;color:#fff">Accès Mama Gang</h1>'+
-        '<p style="color:rgba(255,255,255,0.85);margin:0 0 18px;font-size:13px;text-align:center">Indique ton prénom et ton code personnel</p>'+
-        '<input id="login-name" type="text" placeholder="Ex: Arnaud" style="width:100%;box-sizing:border-box;padding:12px;margin:0 0 12px;border-radius:10px;border:1.5px solid '+(state.simpleLoginError?'var(--border-danger,#E24B4A)':'transparent')+';background:#fff;color:var(--text-primary);font-size:15px;text-align:center">'+
-        '<input id="login-code" type="password" inputmode="numeric" maxlength="4" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;margin:0 0 12px;border-radius:10px;border:1.5px solid '+(state.simpleLoginError?'var(--border-danger,#E24B4A)':'transparent')+';background:#fff;color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
+        '<p style="color:rgba(255,255,255,0.85);margin:0 0 12px;font-size:12px;text-align:center">Ton prénom et ton code personnel</p>'+
+        '<input id="login-name" type="text" placeholder="Ex: Arnaud" style="width:100%;box-sizing:border-box;padding:10px;margin:0 0 8px;border-radius:10px;border:1.5px solid '+(state.simpleLoginError?'var(--border-danger,#E24B4A)':'transparent')+';background:#fff;color:var(--text-primary);font-size:15px;text-align:center">'+
+        '<input id="login-code" type="password" inputmode="numeric" maxlength="4" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:10px;margin:0 0 8px;border-radius:10px;border:1.5px solid '+(state.simpleLoginError?'var(--border-danger,#E24B4A)':'transparent')+';background:#fff;color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
         (state.simpleLoginError ? '<p style="color:#FFD9D9;font-size:13px;margin:0 0 12px;text-align:center">'+esc(state.simpleLoginError)+'</p>' : '')+
         '<button onclick="appAction(\'loginSimple\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#FF6FA5;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Continuer</button>'+
       '</div>'+
-      '<div style="max-width:300px;margin:22px auto 0;display:flex;flex-wrap:wrap;justify-content:center;gap:16px 14px">'+
+      '<div style="max-width:320px;margin:14px auto 0;display:flex;flex-wrap:wrap;justify-content:center;gap:10px 4px">'+
         quickRolesHtml+
       '</div>'+
     '</div>';
@@ -4206,6 +4434,108 @@ window.storage = {
     '</div>';
   }
 
+  function screenLoginNightCode(){
+    return '<div style="padding:40px 20px;text-align:center">'+
+      '<h1 class="mama-title" style="font-size:20px;font-weight:800;margin:0 0 4px">Accès Night</h1>'+
+      '<p style="color:var(--text-secondary);margin:0 0 24px;font-size:14px">Entre le code Night</p>'+
+      '<div style="max-width:260px;margin:0 auto;text-align:left">'+
+        '<input id="night-login-code" type="password" inputmode="numeric" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid '+(state.nightLoginCodeError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-1);color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
+        (state.nightLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">Code incorrect.</p>' : '')+
+        '<button onclick="appAction(\'submitNightLoginCode\')" style="width:100%;margin-top:16px;padding:14px;border-radius:8px;border:2.5px solid var(--border-strong,#000);background:#2F3E7E;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Valider</button>'+
+        '<button onclick="appAction(\'backToChoice\')" style="width:100%;margin-top:10px;padding:12px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:14px;cursor:pointer">Retour</button>'+
+      '</div>'+
+    '</div>';
+  }
+
+  function screenNight(){
+    const cat = state.structure.categories.find(function(c){ return c.id === 'night'; });
+    const subs = cat ? cat.sublieux : [];
+    const prog = state.nightProgress || {};
+    const activeSubs = subs.filter(function(s){ return s.tasks.length > 0; });
+    const validatedCount = activeSubs.filter(function(s){ return prog[s.id] && prog[s.id].validated; }).length;
+    let out = '<div style="padding:16px 16px 4px">'+
+      '<div style="position:relative;border-radius:20px;background:#2F3E7E;color:#fff;padding:20px 18px 18px;border:2.5px solid var(--border-strong,#000);box-shadow:4px 4px 0 var(--border-strong,#000)">'+
+        '<button onclick="appAction(\'logout\')" style="position:absolute;top:12px;right:12px;display:flex;align-items:center;gap:4px;border:1.5px solid rgba(255,255,255,.65);background:transparent;color:#fff;font-size:12px;font-weight:700;cursor:pointer;padding:5px 10px;border-radius:999px">'+icon('back',13)+'<span>Quitter</span></button>'+
+        '<div style="color:#fff;display:flex">'+icon('moon',30)+'</div>'+
+        '<h1 class="mama-title" style="font-size:30px;line-height:1.1;color:#fff;margin:8px 0 10px;letter-spacing:1px">Night</h1>'+
+        '<span style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,.16);color:#fff;font-size:13px;font-weight:700">Semaine '+nightWeekRangeLabel()+'</span>'+
+      '</div>'+
+    '</div>';
+    out += '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:14px 20px 0">'+
+      '<span style="font-size:12px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:var(--text-secondary)">Mes checklists de la semaine</span>'+
+      (activeSubs.length === 0 ? '' : '<span style="font-size:12px;font-weight:800;color:var(--text-primary)">'+validatedCount+'/'+activeSubs.length+' validée'+(validatedCount>1?'s':'')+'</span>')+
+    '</div>';
+    out += '<div style="padding:2px 20px 0;font-size:12px;color:var(--text-muted)">À terminer pour mercredi.'+
+      (isNightWeekFresh() ? ' Nouvelle semaine : la liste est remise à zéro et démarre samedi.' : '')+
+    '</div>';
+    out += '<div style="padding:10px 16px;display:flex;flex-direction:column;gap:10px">';
+    if (subs.length === 0){
+      out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucune checklist à faire cette semaine pour l\'instant.</div>';
+    }
+    subs.forEach(function(sub){
+      const p = prog[sub.id] || { checked: [], validated: false };
+      const total = sub.tasks.length;
+      const done = countChecked(sub, p);
+      let statusLabel, statusBg, statusFg;
+      if (total === 0){ statusLabel = 'Rien cette semaine'; statusBg = 'var(--surface-0)'; statusFg = 'var(--text-muted)'; }
+      else if (p.validated){ statusLabel = 'Validée'; statusBg = 'var(--bg-success,#EAF3DE)'; statusFg = 'var(--text-success,#3B6D11)'; }
+      else if (done > 0){ statusLabel = done+'/'+total; statusBg = '#FFF1C9'; statusFg = '#7A5600'; }
+      else { statusLabel = 'À faire'; statusBg = 'var(--surface-0)'; statusFg = 'var(--text-secondary)'; }
+      const pct = total === 0 ? 0 : Math.round((done/total)*100);
+      out += '<div onclick="appAction(\'openSublieu\', {catId:\'night\', subId:\''+sub.id+'\'})" style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000)">'+
+        '<div style="display:flex;align-items:center;gap:12px">'+
+          '<div style="width:36px;height:36px;border-radius:8px;border:2px solid var(--border-strong,#000);background:'+(p.validated ? '#3FAE6A' : 'var(--bg-accent,#FFD500)')+';color:'+(p.validated ? '#fff' : 'var(--text-primary)')+';display:flex;align-items:center;justify-content:center;flex-shrink:0">'+(p.validated ? icon('check',18) : icon('clipboard',18))+'</div>'+
+          '<div class="mama-title" style="flex:1;font-size:15px;color:var(--text-primary)">'+esc(sub.name)+'</div>'+
+          '<span style="font-size:12px;font-weight:800;padding:3px 10px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:'+statusBg+';color:'+statusFg+'">'+statusLabel+'</span>'+
+          icon('chevronRight',18)+
+        '</div>'+
+        ((!p.validated && done > 0) ? '<div style="height:5px;border-radius:3px;background:var(--surface-0);margin-top:10px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:#2F3E7E"></div></div>' : '')+
+      '</div>';
+    });
+    const es = state.nightEndShift;
+    const esToday = es && es.dateKey === localDateKey(new Date());
+    out += '<div onclick="appAction(\'goNightEndShift\')" style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000)">'+
+      '<div style="display:flex;align-items:center;gap:12px">'+
+        '<div style="width:36px;height:36px;border-radius:8px;border:2px solid var(--border-strong,#000);background:'+(esToday ? '#3FAE6A' : '#FF9F43')+';color:'+(esToday ? '#fff' : '#1A1A1A')+';display:flex;align-items:center;justify-content:center;flex-shrink:0">'+icon('clock',20)+'</div>'+
+        '<div class="mama-title" style="flex:1;font-size:15px;color:var(--text-primary)">Fin de shift</div>'+
+        '<span style="font-size:12px;font-weight:800;padding:3px 10px;border-radius:999px;white-space:nowrap;flex-shrink:0;background:'+(esToday ? 'var(--bg-success,#EAF3DE)' : 'var(--surface-0)')+';color:'+(esToday ? 'var(--text-success,#3B6D11)' : 'var(--text-secondary)')+'">'+(esToday ? 'Départ '+esc(es.time.replace(':','h')) : 'À indiquer')+'</span>'+
+        icon('chevronRight',18)+
+      '</div>'+
+    '</div>';
+    out += '<div onclick="appAction(\'goNightLift\')" style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000)">'+
+      '<div style="display:flex;align-items:center;gap:12px">'+
+        '<div style="width:36px;height:36px;border-radius:8px;border:2px solid var(--border-strong,#000);background:#FF9F43;color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+icon('edit',20)+'</div>'+
+        '<div style="flex:1"><div class="mama-title" style="font-size:15px;color:var(--text-primary)">L\'ascenseur</div>'+
+        '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">Une info à remonter aux managers</div></div>'+
+        icon('chevronRight',18)+
+      '</div>'+
+    '</div>';
+    out += '</div>';
+    return out;
+  }
+
+  function screenNightEndShift(){
+    let out = '<div style="padding:16px 16px 4px">'+
+      '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+        '<div onclick="appAction(\'goNight\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<div style="flex:1"><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">Fin de shift</h1>'+
+        '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">À quelle heure quittes-tu ton poste ?</div></div>'+
+      '</div>'+
+    '</div>';
+    const es = state.nightEndShift;
+    if (es && es.dateKey === localDateKey(new Date())){
+      out += '<div style="margin:8px 16px;padding:14px;border-radius:10px;background:var(--bg-success,#EAF3DE);color:var(--text-success,#3B6D11);font-size:14px">Déjà transmis : départ à '+esc(es.time.replace(':','h'))+'. Tu peux le corriger ci-dessous.</div>';
+    }
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:14px">'+
+      '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Heure de départ</label>'+
+      '<input id="night-end-time" type="time" value="'+esc(state.nightEndTime)+'" oninput="trackFormField(\'nightEndTime\', this.value)" style="width:100%;box-sizing:border-box;padding:14px;margin-top:6px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:20px;font-weight:700;text-align:center"></div>'+
+      (state.nightEndError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0">Indique une heure avant d\'envoyer.</p>' : '')+
+      '<button onclick="appAction(\'submitNightEndShift\')" style="width:100%;padding:16px;border-radius:10px;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;border:2.5px solid var(--border-strong,#000);box-shadow:3px 3px 0 var(--border-strong,#000);background:#2F3E7E;color:#fff">Envoyer aux managers</button>'+
+    '</div>';
+    out += bottomNav('home');
+    return out;
+  }
+
   function screenLoginTechniqueCode(){
     return '<div style="padding:40px 20px;text-align:center">'+
       '<h1 class="mama-title" style="font-size:20px;font-weight:800;margin:0 0 4px">Accès Technique</h1>'+
@@ -4256,7 +4586,7 @@ window.storage = {
       {bg:'#2AB0C5', fg:'#1A1A1A'},
       {bg:'#3FAE6A', fg:'#FFFFFF'}
     ];
-    const visibleCategories = state.structure.categories.filter(function(cat){ return cat.id !== 'fermeture'; });
+    const visibleCategories = state.structure.categories.filter(function(cat){ return cat.id !== 'fermeture' && cat.id !== 'night'; });
     const categorySubtitles = {
       'ateliers': 'Remplir les checklists',
       'bar': 'Pertes, Nettoyage, Températures, Réqui',
@@ -4564,7 +4894,7 @@ window.storage = {
     const sub = findSublieu(state.categoryId, state.sublieuId);
     const p = state.progress[state.sublieuId];
     const total = sub.tasks.length;
-    const done = p.checked.length;
+    const done = countChecked(sub, p);
     const pct = total === 0 ? 0 : Math.round((done/total)*100);
     const allChecked = total > 0 && done === total;
 
@@ -4573,6 +4903,7 @@ window.storage = {
         '<div onclick="appAction(\'backToSublieux\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
         '<div style="width:32px;height:32px;border-radius:8px;background:var(--bg-accent,#E6F1FB);color:var(--text-accent,#185FA5);display:flex;align-items:center;justify-content:center">'+icon(sub.icon,18)+'</div>'+
         '<div style="flex:1"><div style="font-size:16px;font-weight:500;color:var(--text-primary)">'+esc(sub.name.toUpperCase())+'</div>'+
+        (state.categoryId === 'night' ? '<div style="font-size:13px;color:var(--text-secondary)">Semaine '+nightWeekRangeLabel()+'</div>' : '')+
         '<div style="font-size:13px;color:var(--text-secondary)">Opérateur : '+esc(p.operator||state.name)+'</div></div>'+
       '</div>'+
     '</div>';
@@ -4584,7 +4915,7 @@ window.storage = {
 
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
     if (total === 0){
-      out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucune tâche définie ici pour l\'instant. Ajoute des tâches depuis Admin.</div>';
+      out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">'+(state.categoryId === 'night' ? 'Aucune tâche pour cette semaine. Les managers peuvent en ajouter.' : 'Aucune tâche définie ici pour l\'instant. Ajoute des tâches depuis Admin.')+'</div>';
     }
     sub.tasks.forEach(function(t, idx){
       if (t.group && t.group !== sub.tasks[idx-1]?.group){
@@ -4599,7 +4930,8 @@ window.storage = {
     out += '</div>';
 
     if (total > 0){
-      const isWeekly = WEEKLY_SHARED_PROGRESS_SUBLIEUX.indexOf(state.sublieuId) >= 0;
+      const isWeekly = isWeeklyChecklist(state.sublieuId);
+      const isNight = state.categoryId === 'night';
       out += '<div style="padding:8px 16px">'+
         '<label style="font-size:14px;color:var(--text-secondary);font-weight:600">Commentaires (optionnel)</label>'+
         '<textarea id="checklist-comment" '+(p.validated?'disabled':'')+' onblur="appAction(\'saveComment\')" placeholder="Ex: manque un feutre rouge, prise cassée…" style="width:100%;box-sizing:border-box;min-height:70px;margin-top:6px;padding:12px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:14px;font-family:inherit;resize:vertical">'+esc(p.comment||'')+'</textarea>'+
@@ -4607,7 +4939,9 @@ window.storage = {
 
       if (isWeekly && !allChecked && !p.validated){
         out += '<div style="margin:0 16px 8px;padding:12px;border-radius:10px;background:var(--surface-0);color:var(--text-secondary);font-size:13px">'+
-          'En attente — '+done+'/'+total+' tâches faites cette semaine. Elle repassera à zéro automatiquement mardi prochain, ou dès que tout est coché puis validé.'+
+          (isNight
+            ? 'En cours — '+done+'/'+total+' tâches faites cette semaine. Tu peux la reprendre à tout moment jusqu\'à mercredi, elle repart de zéro jeudi.'
+            : 'En attente — '+done+'/'+total+' tâches faites cette semaine. Elle repassera à zéro automatiquement mardi prochain, ou dès que tout est coché puis validé.')+
         '</div>';
       }
       if (state.weeklyIncompleteError){
@@ -4618,7 +4952,7 @@ window.storage = {
         '<button '+(p.validated ? 'disabled' : '')+' onclick="appAction(\'validate\')" style="width:100%;padding:16px;border-radius:10px;font-size:15px;cursor:'+(!p.validated?'pointer':'not-allowed')+';border:'+(!p.validated?'2.5px solid var(--border-strong,#000)':'2px solid var(--border)')+';font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:'+(!p.validated?'3px 3px 0 var(--border-strong,#000)':'none')+';background:'+(!p.validated?'var(--text-accent,#185FA5)':'var(--surface-0)')+';color:'+(!p.validated?'#fff':'var(--text-muted)')+'">'+
         (p.validated ? (isWeekly ? 'Checklist déjà validée' : 'Checklist déjà validée aujourd\'hui') : 'Valider la checklist')+
         '</button>'+
-        (isWeekly && !p.validated ? '<button onclick="appAction(\'goHome\')" style="width:100%;margin-top:10px;padding:14px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary)">Continuer une autre fois</button>' : '')+
+        (isWeekly && !p.validated ? '<button onclick="appAction(\''+(isNight ? 'goNight' : 'goHome')+'\')" style="width:100%;margin-top:10px;padding:14px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary)">Continuer une autre fois</button>' : '')+
       '</div>';
     }
 
@@ -5166,8 +5500,8 @@ window.storage = {
   }
 
   function screenAccessManagement(){
-    const roleLabels = { mamagang:'Mama Gang (sans accès spécifique)', manager:'Manager', econome:'Économe', entertainment:'Entertainment', events:'Events', rh:'RH', technique:'Technique', admin:'Admin' };
-    const roleColors = { mamagang:'var(--surface-0)', manager:'var(--bg-accent,#FFD500)', econome:'#2AB0C5', entertainment:'#FF8AB4', events:'#7A5FE0', rh:'#3FAE6A', technique:'#FF9F43', admin:'#1A1A1A' };
+    const roleLabels = { mamagang:'Mama Gang (sans accès spécifique)', manager:'Manager', econome:'Économe', entertainment:'Entertainment', events:'Events', rh:'RH', technique:'Technique', night:'Night', admin:'Admin' };
+    const roleColors = { mamagang:'var(--surface-0)', manager:'var(--bg-accent,#FFD500)', econome:'#2AB0C5', entertainment:'#FF8AB4', events:'#7A5FE0', rh:'#3FAE6A', technique:'#FF9F43', night:'#2F3E7E', admin:'#1A1A1A' };
     const posteLabels = { manager:'Manager', salle:'Salle', bar:'Bar', hotel:'Hôtel', cuisine:'Cuisine', 'autres-services':'Autres Services', 'non-attribue':'Non attribué' };
     const users = (state.accessUsers || []).slice();
     (state.mamaGangUsers || []).forEach(function(u){
@@ -5551,6 +5885,9 @@ window.storage = {
         out += '<div style="border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);padding:16px">';
         out += '<div class="mama-title" style="font-size:16px;color:var(--text-primary)">'+esc(h.sublieuName)+'</div>';
         out += '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">'+esc(h.categoryName)+' · Par '+esc(h.operator)+' · '+esc(h.when)+'</div>';
+        if (h.weekLabel){
+          out += '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">Semaine '+esc(h.weekLabel)+'</div>';
+        }
         if (h.comment){
           out += '<div style="font-size:13px;color:var(--text-primary);margin-top:12px;padding:10px;border-radius:8px;background:var(--surface-0)">'+esc(h.comment)+'</div>';
         }
@@ -5612,7 +5949,8 @@ window.storage = {
         const action = item.kind === 'temperature' ? 'openHistoriqueTemp' : (item.kind === 'tracabilite' ? 'openHistoriqueTraca' : 'openHistoriqueReport');
         out += '<div onclick="appAction(\''+action+'\',\''+r.id+'\')" style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:space-between">'+
           '<div><div style="font-size:15px;font-weight:600;color:var(--text-primary)">'+esc(r.sublieuName)+'</div>'+
-          '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">Par '+esc(r.operator)+' · '+esc(r.when)+'</div></div>'+
+          '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">Par '+esc(r.operator)+' · '+esc(r.when)+'</div>'+
+          (r.weekLabel ? '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">Semaine '+esc(r.weekLabel)+'</div>' : '')+'</div>'+
           icon('chevronRight',18)+
         '</div>';
       });
@@ -6222,6 +6560,13 @@ window.storage = {
           out += '</div>';
         });
 
+        if (cat.id === 'night'){
+          out += '<p style="font-size:12px;color:var(--text-muted);margin:2px 2px 0;line-height:1.4">Tâches hebdomadaires : les tâches fixes (ajouter / supprimer). Tâches annexes : les tâches ponctuelles (ajouter / modifier).</p>';
+          out += '<div style="display:flex;gap:6px;align-items:center;padding:6px 2px 0">'+
+            '<input id="new-night-checklist" placeholder="Nouvelle checklist Night" value="'+esc(state.nightNewChecklistDraft)+'" oninput="trackFormField(\'nightNewChecklistDraft\', this.value)" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px">'+
+            '<button onclick="appAction(\'addNightChecklist\')" style="padding:10px 12px;border-radius:8px;border:2px solid var(--border-strong,#000);background:#2F3E7E;color:#fff;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;flex-shrink:0">+ Ajouter</button>'+
+          '</div>';
+        }
         out += '</div>';
       }
       out += '</div>';
@@ -6248,6 +6593,7 @@ window.storage = {
       else if (state.loginStep === 'events-code') html = screenLoginEventsCode();
       else if (state.loginStep === 'rh-code') html = screenLoginRhCode();
       else if (state.loginStep === 'technique-code') html = screenLoginTechniqueCode();
+      else if (state.loginStep === 'night-code') html = screenLoginNightCode();
       else if (state.loginStep === 'admin-code') html = screenLoginAdminCode();
     }
     else if (state.screen === 'home') html = screenHome();
@@ -6271,6 +6617,8 @@ window.storage = {
     else if (state.screen === 'historique') html = screenHistorique();
     else if (state.screen === 'admin') html = screenAdmin();
     else if (state.screen === 'fermeture') html = screenFermeture();
+    else if (state.screen === 'night') html = screenNight();
+    else if (state.screen === 'night-endshift') html = screenNightEndShift();
     else if (state.screen === 'whatsup') html = screenWhatsup();
     else if (state.screen === 'manager-planning') html = screenManagerPlanning();
     else if (state.screen === 'planning-view') html = screenPlanningView();
