@@ -80,6 +80,12 @@ window.storage = {
     return { key: key, deleted: true };
   }
 };
+// Connexion sécurisée du compte administrateur (nécessaire pour modifier les allergènes)
+window.agAuth = {
+  async status(){ const r = await supabaseClient.auth.getSession(); return (r.data && r.data.session) ? r.data.session.user.email : null; },
+  async signIn(email, password){ const r = await supabaseClient.auth.signInWithPassword({ email: email, password: password }); if (r.error) throw r.error; return r.data.user.email; },
+  async signOut(){ await supabaseClient.auth.signOut(); }
+};
 </script>
 <script>
 (function(){
@@ -1087,6 +1093,7 @@ window.storage = {
     nightLoginCodeError: false,
     nightProgress: {},
     nightEndShift: null,
+    agm: null,
     nightEndTime: '',
     nightEndError: false,
     remonteeFromNight: false,
@@ -1212,7 +1219,7 @@ window.storage = {
     return d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
   }
 
-  const CURRENT_MIGRATION_VERSION = 10;
+  const CURRENT_MIGRATION_VERSION = 12;
   async function getMigrationVersion(){
     try {
       const res = await window.storage.get('migrationVersion', true);
@@ -1946,7 +1953,7 @@ window.storage = {
   }
 
   const SESSION_SNAPSHOT_KEY = 'copilote_session_snapshot';
-  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','entertainmentEditingId','entFormDate','entFormType','entFormInfo','cameFromManagerMenu'];
+  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','agm','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','entertainmentEditingId','entFormDate','entFormType','entFormInfo','cameFromManagerMenu'];
   function compressImageDataUrl(dataUrl, maxWidth, quality){
     return new Promise(function(resolve){
       try {
@@ -1994,6 +2001,10 @@ window.storage = {
       }
       if (state.screen === 'entertainment-form' && state.entertainmentUnlocked){
         state.events = await getEvents();
+      }
+      if ((state.screen === 'allergenes-read') || (state.screen === 'ag-manager' && state.adminUnlocked)){
+        agDb = await agLoad();
+        if (state.screen === 'ag-manager' && !state.agm) state.agm = agmNew();
       }
       if (state.screen === 'allergenes-admin' && state.adminUnlocked){
         state.allergenesMenu = await getAllergenesMenu();
@@ -2172,6 +2183,20 @@ window.storage = {
           }
         });
         await saveAllergenesMenu(existingAllergenes);
+      } catch(e){}
+      try {
+        // Module allergènes v2 : initialise la base uniquement si elle n'existe pas encore (ne jamais écraser).
+        let agExists = true;
+        try { await window.storage.get('allergenDb', true); } catch(e){ agExists = !/not found/i.test(String(e && e.message || e)); }
+        if (!agExists) await agWrite('allergenDb', agSeedDb());
+        else {
+          // Remplace l'ancienne base de départ (rev. 1) tant qu'aucun manager n'a rien modifié.
+          const rawDb = JSON.parse((await window.storage.get('allergenDb', true)).value);
+          if (!rawDb.seedRev || rawDb.seedRev < 3){
+            const hist = await agHistoryLoad();
+            if (!hist.length) await agWrite('allergenDb', agSeedDb());
+          }
+        }
       } catch(e){}
       if (structureMigrationOk){
         await window.storage.set('migrationVersion', String(CURRENT_MIGRATION_VERSION), true);
@@ -3292,8 +3317,25 @@ window.storage = {
       render();
     }
     else if (action === 'goAllergenesRead'){
-      state.allergenesMenu = await getAllergenesMenu();
+      agDb = await agLoad();
+      agLastJson = JSON.stringify(agDb);
+      agUI.mode = 'search'; agUI.q = ''; agUI.menuId = null; agUI.famId = null; agUI.recipeId = null;
       state.screen = 'allergenes-read';
+      render();
+    }
+    else if (action === 'goAgManager'){
+      if (state.adminUnlocked){
+        agDb = await agLoad();
+        state.agm = agmNew();
+        if (window.agAuth){
+          let who = null; try { who = await window.agAuth.status(); } catch(e){}
+          if (!who) state.agm.view = 'auth';
+        }
+        state.screen = 'ag-manager';
+      } else {
+        state.lockedFor = 'admin-access';
+        state.screen = 'manager-locked';
+      }
       render();
     }
     else if (action === 'goRemontees'){
@@ -5442,7 +5484,7 @@ window.storage = {
       '<div style="width:42px;height:42px;flex-shrink:0;border-radius:10px;border:2px solid var(--border-strong,#000);background:#fff;color:#7A5FE0;display:flex;align-items:center;justify-content:center">'+icon('edit',22)+'</div>'+
       '<div class="mama-title" style="font-size:15px;color:#fff">Modifier une fiche (Process & Infos)</div>'+
     '</button>';
-    out += '<button onclick="appAction(\'goAllergenesAdmin\')" style="display:flex;align-items:center;gap:14px;padding:18px;border-radius:14px;border:2.5px solid var(--border-strong,#000);background:#3FAE6A;color:#fff;cursor:pointer;text-align:left;box-shadow:4px 4px 0 var(--border-strong,#000)">'+
+    out += '<button onclick="appAction(\'goAgManager\')" style="display:flex;align-items:center;gap:14px;padding:18px;border-radius:14px;border:2.5px solid var(--border-strong,#000);background:#3FAE6A;color:#fff;cursor:pointer;text-align:left;box-shadow:4px 4px 0 var(--border-strong,#000)">'+
       '<div style="width:42px;height:42px;flex-shrink:0;border-radius:10px;border:2px solid var(--border-strong,#000);background:#fff;color:#3FAE6A;display:flex;align-items:center;justify-content:center">'+icon('edit',22)+'</div>'+
       '<div class="mama-title" style="font-size:15px;color:#fff">Gérer les allergènes</div>'+
     '</button>';
@@ -6610,6 +6652,7 @@ window.storage = {
     else if (state.screen === 'bar-recettes-editor') html = screenBarRecettesEditor();
     else if (state.screen === 'allergenes-admin') html = screenAllergenesAdmin();
     else if (state.screen === 'allergenes-read') html = screenAllergenesReadMamaGang();
+    else if (state.screen === 'ag-manager') html = screenAgManager();
     else if (state.screen === 'process-infos-read') html = screenProcessInfosReadView();
     else if (state.screen === 'recettes-read') html = screenRecettesReadView();
     else if (state.screen === 'admin-menu') html = screenAdminMenu();
@@ -6657,119 +6700,973 @@ window.storage = {
     }
   }
 
-  function buildAllergenesSearchAndListHtml(menu){
-    let out = '<div style="padding:8px 16px 0">'+
-      '<input id="pub-allergenes-search" type="text" placeholder="Rechercher un plat…" oninput="filterPublicAllergenesMenu(this.value)" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px">'+
-    '</div>';
-    out += '<div id="pub-allergenes-list" style="padding:4px 16px 24px">';
-    menu.categories.forEach(function(cat, catIdx){
-      out += '<details class="pub-allergene-cat" data-cat="'+cat.id+'" style="margin-top:'+(catIdx===0?'14px':'16px')+'">';
-      out += '<summary style="display:flex;align-items:baseline;gap:8px;border-bottom:2.5px solid var(--border-strong,#000);padding-bottom:8px;margin-bottom:2px;cursor:pointer;list-style:none">'+
-        '<h2 class="mama-title" style="font-size:19px;color:var(--text-primary);margin:0;flex:1">'+esc(cat.name)+'</h2>'+
-        '<span style="font-size:12px;color:var(--text-muted);font-weight:600">'+cat.items.length+' plat'+(cat.items.length>1?'s':'')+'</span>'+
-        '<span class="pub-allergene-chevron" style="color:var(--text-secondary);display:flex;align-items:center;transition:transform .15s">'+icon('chevronDown',18)+'</span>'+
-      '</summary>';
-      if (cat.items.length === 0){
-        out += '<div style="font-size:13px;color:var(--text-muted);padding:12px 0">Aucun plat pour l\'instant dans cette catégorie.</div>';
+  // ================= MODULE ALLERGÈNES v2 =================
+  const AG_ALLERGENS = [
+    {k:'Gluten',en:'Gluten'},{k:'Crustacés',en:'Crustaceans'},{k:'Œufs',en:'Eggs'},{k:'Poissons',en:'Fish'},
+    {k:'Arachides',en:'Peanuts'},{k:'Soja',en:'Soy'},{k:'Lait',en:'Milk'},{k:'Fruits à coque',en:'Tree Nuts'},
+    {k:'Céleri',en:'Celery'},{k:'Moutarde',en:'Mustard'},{k:'Sésame',en:'Sesame'},{k:'Sulfites',en:'Sulphites'},
+    {k:'Lupin',en:'Lupin'},{k:'Mollusques',en:'Molluscs'}
+  ];
+  const AG_LEVELS = { confirmed:'Confirmée par composition', precaution:'Retenue par précaution', supplier:'Vérification fournisseur nécessaire' };
+
+  const AG_SEED = {"v":2,"seedRev":3,"menus":[{"id":"lunch","type":"carte","nameFr":"Lunch","nameEn":"Lunch","families":[{"id":"l-ent","nameFr":"Entrées","nameEn":"Starters"},{"id":"l-sal","nameFr":"Salades","nameEn":"Salads"},{"id":"l-inc","nameFr":"Incontournables","nameEn":""},{"id":"l-plat","nameFr":"Plats généreux","nameEn":"Hearty Main Courses"},{"id":"l-part","nameFr":"À partager","nameEn":"To Share"},{"id":"l-des","nameFr":"Desserts","nameEn":"Desserts"},{"id":"l-dpart","nameFr":"Desserts à partager","nameEn":""}]},{"id":"dinner","type":"carte","nameFr":"Dinner","nameEn":"Dinner","families":[{"id":"d-ent","nameFr":"Entrées ou à partager","nameEn":""},{"id":"d-sal","nameFr":"Salades","nameEn":"Salads"},{"id":"d-plat","nameFr":"Plats généreux","nameEn":"Hearty Main Courses"},{"id":"d-asa","nameFr":"L'Asador","nameEn":"Mama's Argentinian Grill"},{"id":"d-east","nameFr":"Mama Goes East","nameEn":""},{"id":"d-des","nameFr":"Desserts","nameEn":"Desserts"},{"id":"d-dpart","nameFr":"Desserts à partager","nameEn":""}]},{"id":"g1","type":"groupe","nameFr":"Déjeuner de la Mama","nameEn":"","families":[{"id":"g1-entrees","nameFr":"Entrées","nameEn":""},{"id":"g1-plats","nameFr":"Plats","nameEn":""},{"id":"g1-desserts","nameFr":"Desserts","nameEn":""}]},{"id":"g2","type":"groupe","nameFr":"Déjeuner Incontournable","nameEn":"","families":[{"id":"g2-entrees","nameFr":"Entrées","nameEn":""},{"id":"g2-plats","nameFr":"Plats","nameEn":""},{"id":"g2-desserts","nameFr":"Desserts","nameEn":""}]},{"id":"g3","type":"groupe","nameFr":"Déjeunette","nameEn":"","families":[{"id":"g3-assortiments-sales","nameFr":"Assortiments salés","nameEn":""},{"id":"g3-assortiments-sucres","nameFr":"Assortiments sucrés","nameEn":""}]},{"id":"g4","type":"groupe","nameFr":"Dîner de la Mama","nameEn":"","families":[{"id":"g4-entrees","nameFr":"Entrées","nameEn":""},{"id":"g4-plats","nameFr":"Plats","nameEn":""},{"id":"g4-desserts","nameFr":"Desserts","nameEn":""}]},{"id":"g5","type":"groupe","nameFr":"Big Dîner","nameEn":"","families":[{"id":"g5-entrees","nameFr":"Entrées","nameEn":""},{"id":"g5-plats","nameFr":"Plats","nameEn":""},{"id":"g5-desserts","nameFr":"Desserts","nameEn":""}]},{"id":"g6","type":"groupe","nameFr":"Dînette","nameEn":"","families":[{"id":"g6-assortiments-sales","nameFr":"Assortiments salés","nameEn":""},{"id":"g6-assortiments-sucres","nameFr":"Assortiments sucrés","nameEn":""}]},{"id":"g7","type":"groupe","nameFr":"Dîner Festif","nameEn":"","families":[{"id":"g7-entrees","nameFr":"Entrées","nameEn":""},{"id":"g7-plats","nameFr":"Plats","nameEn":""},{"id":"g7-dessert","nameFr":"Dessert","nameEn":""}]},{"id":"g8","type":"groupe","nameFr":"Dînette Festive","nameEn":"","families":[{"id":"g8-assortiments-sales","nameFr":"Assortiments salés","nameEn":""},{"id":"g8-assortiment-sucre","nameFr":"Assortiment sucré","nameEn":""}]},{"id":"g9","type":"groupe","nameFr":"Frozen Party","nameEn":"","families":[{"id":"g9-offre-salee","nameFr":"Offre salée","nameEn":""},{"id":"g9-dessert","nameFr":"Dessert","nameEn":""}]},{"id":"g10","type":"groupe","nameFr":"Winter Party","nameEn":"","families":[{"id":"g10-offre-salee","nameFr":"Offre salée","nameEn":""},{"id":"g10-dessert","nameFr":"Dessert","nameEn":""}]}],"recipes":[{"id":"r-s-0","nameFr":"Velouté de champignons, œuf parfait","nameEn":"","descFr":"avec ou sans lard croustillant","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"lunch","f":"l-ent"},{"m":"dinner","f":"d-ent"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-1","nameFr":"Burrata crémeuse 125 g","nameEn":"","descFr":"potimarron rôti, betterave, vinaigrette mélasse de grenade","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-ent"},{"m":"dinner","f":"d-ent"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-2","nameFr":"Œufs mimosa tartufata","nameEn":"","descFr":"salade de mâche","descEn":"","note":"Fiches proches fusionnées : salade de mâche / (sans description).","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"lunch","f":"l-ent"},{"m":"dinner","f":"d-ent"},{"m":"g3","f":"g3-assortiments-sales"},{"m":"g8","f":"g8-assortiments-sales"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026","aliasKeys":["oeufs mimosa tartufata","oeufs mimosa tartufata salade de mache"]},{"id":"r-s-3","nameFr":"Salade César de la Mama","nameEn":"","descFr":"poulet crunchy, romaine, concombre, tomates cerises, parmesan, sauce César","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Poissons":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"lunch","f":"l-sal"},{"m":"dinner","f":"d-sal"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-4","nameFr":"Salade de tofu croustillant","nameEn":"","descFr":"romaine, concombre, tomates cerises, mélasse de grenade, croûtons de focaccia","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-sal"},{"m":"dinner","f":"d-sal"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-5","nameFr":"Salade Toulousaine","nameEn":"","descFr":"frisée, magret séché, gésiers, Courajou, pignons, croûtons de focaccia","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-sal"},{"m":"dinner","f":"d-sal"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-6","nameFr":"Cheeseburger de la Mama (avec ou sans supplément bacon)","nameEn":"","descFr":"pain bio, bœuf haché, oignons rouges, cheddar, tomate, romaine, sauce cocktail, frites","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"lunch","f":"l-inc"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-7","nameFr":"Cocotte de coquillettes de la Mama","nameEn":"","descFr":"jambon Mostoles, œuf mollet, crème à la muscade, herbes fraîches","descEn":"","note":"Fiches proches fusionnées : jambon Mostoles, œuf mollet, crème à la muscade, herbes fraîches / jambon Mostoles, œuf mollet, crème muscade, herbes fraîches.","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"lunch","f":"l-inc"},{"m":"dinner","f":"d-plat"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026","aliasKeys":["cocotte de coquillettes de la mama jambon mostoles oeuf mollet creme a la muscade herbes fraiches","cocotte de coquillettes de la mama jambon mostoles oeuf mollet creme muscade herbes fraiches"]},{"id":"r-s-8","nameFr":"Saucisse de Toulouse Maison Garcia","nameEn":"","descFr":"purée de pommes de terre, jus de volaille corsé moutardé","descEn":"","note":"Fiches proches fusionnées : purée de pommes de terre, jus de volaille corsé moutardé / purée de pommes de terre, jus de volaille moutardé.","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"lunch","f":"l-plat"},{"m":"dinner","f":"d-plat"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026","aliasKeys":["saucisse de toulouse maison garcia puree de pommes de terre jus de volaille corse moutarde","saucisse de toulouse maison garcia puree de pommes de terre jus de volaille moutarde"]},{"id":"r-s-9","nameFr":"Poitrine de porc au sirop d’érable","nameEn":"","descFr":"purée de pommes de terre","descEn":"","note":"Fiches proches fusionnées : purée de pommes de terre / purée de pommes de terre, jus de rôti.","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"lunch","f":"l-plat"},{"m":"dinner","f":"d-plat"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026","aliasKeys":["poitrine de porc au sirop d erable puree de pommes de terre","poitrine de porc au sirop d erable puree de pommes de terre jus de roti"]},{"id":"r-s-10","nameFr":"Saumon mi-cuit","nameEn":"","descFr":"potimarron et chou-fleur rôtis, sauce Angus","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Poissons":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"lunch","f":"l-plat"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-11","nameFr":"Bavette de bœuf 180 g","nameEn":"","descFr":"frites maison, béarnaise","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"lunch","f":"l-plat"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-12","nameFr":"Demi-magret de canard","nameEn":"","descFr":"frites maison, sauce Angus","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"lunch","f":"l-plat"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-13","nameFr":"Légumes rôtis de saison","nameEn":"","descFr":"yaourt grec, sel fumé, zaatar","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-plat"},{"m":"dinner","f":"d-plat"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-14","nameFr":"Planche de charcuteries Maison Garcia","nameEn":"","descFr":"recette en cours","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Fruits à coque":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"lunch","f":"l-part"},{"m":"dinner","f":"d-ent"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-15","nameFr":"Assortiment de fromages affinés","nameEn":"","descFr":"recette en cours","descEn":"","note":"","allergens":{"Lait":"precaution","Œufs":"precaution"},"noAllergen":false,"places":[{"m":"lunch","f":"l-part"},{"m":"dinner","f":"d-ent"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-16","nameFr":"Camembert rôti au four","nameEn":"","descFr":"compotée d’oignons rouges caramélisés, mouillettes","descEn":"","note":"","allergens":{"Gluten":"precaution","Lait":"precaution","Œufs":"precaution","Sésame":"precaution","Soja":"precaution"},"noAllergen":false,"places":[{"m":"lunch","f":"l-part"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-17","nameFr":"Glaces et sorbets maison (1, 2 ou 3 boules)","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-des"},{"m":"dinner","f":"d-des"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-19","nameFr":"Pavlova aux fruits exotiques","nameEn":"","descFr":"sorbet Piña Colada","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-des"},{"m":"dinner","f":"d-des"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-20","nameFr":"Millefeuille vanille","nameEn":"","descFr":"crème diplomate, caramel, noisettes, amandes","descEn":"","note":"Fiches proches fusionnées : crème diplomate, caramel, noisettes, amandes / (sans description).","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-des"},{"m":"dinner","f":"d-des"},{"m":"g4","f":"g4-desserts"},{"m":"g5","f":"g5-desserts"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":"","aliasKeys":["millefeuille vanille","millefeuille vanille creme diplomate caramel noisettes amandes"]},{"id":"r-s-21","nameFr":"Éclair chocolat et praliné","nameEn":"","descFr":"craquelin, crémeux, ganache, noisettes","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-des"},{"m":"dinner","f":"d-des"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-22","nameFr":"Tarte façon forêt noire","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-des"},{"m":"dinner","f":"d-des"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-23","nameFr":"Tarte Tatin","nameEn":"","descFr":"glace extra vanillée","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-des"},{"m":"dinner","f":"d-des"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-24","nameFr":"Moelleux chocolat","nameEn":"","descFr":"cœur coulant chocolat","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-des"},{"m":"dinner","f":"d-des"},{"m":"g4","f":"g4-desserts"},{"m":"g5","f":"g5-desserts"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-25","nameFr":"Café ou thé gourmand","nameEn":"","descFr":"cookie, tiramisu, glace lait d’amande","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-des"},{"m":"dinner","f":"d-des"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-26","nameFr":"Champagne gourmand","nameEn":"","descFr":"Mumm 12 cl, cookie, tiramisu, glace lait d’amande","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-des"},{"m":"dinner","f":"d-des"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-27","nameFr":"Big cookie mi-cuit","nameEn":"","descFr":"glace vanille, praliné croustillant","descEn":"","note":"Fiches proches fusionnées : glace vanille, praliné croustillant / noisettes, praliné croustillant, glace vanille.","allergens":{},"noAllergen":false,"places":[{"m":"lunch","f":"l-dpart"},{"m":"dinner","f":"d-dpart"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":"","aliasKeys":["big cookie mi cuit glace vanille praline croustillant","big cookie mi cuit noisettes praline croustillant glace vanille"]},{"id":"r-s-28","nameFr":"Camembert rôti","nameEn":"","descFr":"mouillettes, poivre mignonnette","descEn":"","note":"","allergens":{"Gluten":"precaution","Lait":"precaution","Œufs":"precaution","Sésame":"precaution","Soja":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-ent"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-29","nameFr":"Croques Comté et jambon Mostoles (8 pièces)","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-ent"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-33","nameFr":"Saumon mi-cuit 160 g","nameEn":"","descFr":"potimarron et chou-fleur rôtis, sauce Angus","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Poissons":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-asa"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-34","nameFr":"Tentacule de poulpe grillé","nameEn":"","descFr":"pommes grenailles en persillade, sauce vierge","descEn":"","note":"Moutarde confirmée par le manager (le fichier Excel MAJ ne la coche pas).","allergens":{"Céleri":"precaution","Mollusques":"precaution","Sulfites":"precaution","Moutarde":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-asa"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-35","nameFr":"Suprême de volaille fermière 200 g","nameEn":"","descFr":"purée, jus de rôti","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-asa"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-36","nameFr":"Magret de canard du Sud-Ouest Maison Samaran 300 g","nameEn":"","descFr":"grenailles, sucrine grillée, sauces vierge et Angus","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-asa"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-37","nameFr":"Épaule de veau confite","nameEn":"","descFr":"grenailles, sucrine grillée, sauces vierge et Angus","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-asa"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-38","nameFr":"Picanha 200 g","nameEn":"","descFr":"grenailles, sucrine grillée, sauces vierge et Angus","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-asa"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-39","nameFr":"Pluma de porc ibérique Maison Garcia 200 g","nameEn":"","descFr":"grenailles, sucrine grillée, sauces vierge et Angus","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-asa"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-40","nameFr":"Parrillada de la Mama","nameEn":"","descFr":"picanha, saucisse de Toulouse, poitrine de porc, frites, salade, sauces Angus et béarnaise","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-asa"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-41","nameFr":"Côte de bœuf maturée","nameEn":"","descFr":"frites maison, salade verte, sauces Angus et béarnaise","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-asa"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-42","nameFr":"Crispy Prawns","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Crustacés":"precaution","Moutarde":"precaution","Œufs":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-east"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-43","nameFr":"Steam Gyozas (6 pcs)","nameEn":"","descFr":"Veggie","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Moutarde":"precaution","Œufs":"precaution","Poissons":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-east"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-44","nameFr":"Steam Gyozas (6 pcs)","nameEn":"","descFr":"Chicken","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Moutarde":"precaution","Œufs":"precaution","Poissons":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-east"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-45","nameFr":"Matcha Cheesecake","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"dinner","f":"d-east"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-46","nameFr":"Cucumber Salad","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Gluten":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-east"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-47","nameFr":"Kaarage Chicken Bao","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-east"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-48","nameFr":"Donburi Steak","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-east"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-49","nameFr":"Eggplant Bao","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-east"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-50","nameFr":"Tuna Tataki","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Moutarde":"precaution","Œufs":"precaution","Poissons":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"dinner","f":"d-east"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-51","nameFr":"Cheesecake matcha","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"dinner","f":"d-des"},{"m":"g1","f":"g1-desserts"},{"m":"g2","f":"g2-desserts"},{"m":"g4","f":"g4-desserts"},{"m":"g5","f":"g5-desserts"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-53","nameFr":"Gyozas végétariens","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Moutarde":"precaution","Œufs":"precaution","Poissons":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"g1","f":"g1-entrees"},{"m":"g2","f":"g2-entrees"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-54","nameFr":"Crème de champignon & bacon croustillant","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"g1","f":"g1-entrees"},{"m":"g2","f":"g2-entrees"},{"m":"g4","f":"g4-entrees"},{"m":"g5","f":"g5-entrees"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-55","nameFr":"Croque Comté & jambon Mostoles","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"g1","f":"g1-entrees"},{"m":"g2","f":"g2-entrees"},{"m":"g3","f":"g3-assortiments-sales"},{"m":"g4","f":"g4-entrees"},{"m":"g5","f":"g5-entrees"},{"m":"g6","f":"g6-assortiments-sales"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-56","nameFr":"Salade de lentilles bien moutardée & œuf mollet","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g1","f":"g1-entrees"},{"m":"g2","f":"g2-entrees"},{"m":"g4","f":"g4-entrees"},{"m":"g5","f":"g5-entrees"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-57","nameFr":"Cocotte de coquillettes, jambon Mostoles & œuf mollet","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"g1","f":"g1-plats"},{"m":"g2","f":"g2-plats"},{"m":"g4","f":"g4-plats"},{"m":"g5","f":"g5-plats"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-58","nameFr":"Bœuf bourguignon & purée de pomme de terre maison","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g1","f":"g1-plats"},{"m":"g2","f":"g2-plats"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-59","nameFr":"Poisson du jour, chou-fleur et potiron confit & sauce Angus","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g1","f":"g1-plats"},{"m":"g2","f":"g2-plats"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-60","nameFr":"Légumes rôtis de saison & sauce au yaourt grec","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g1","f":"g1-plats"},{"m":"g2","f":"g2-plats"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-61","nameFr":"Tarte Tatin & boule de glace vanille maison","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g1","f":"g1-desserts"},{"m":"g2","f":"g2-desserts"},{"m":"g4","f":"g4-desserts"},{"m":"g5","f":"g5-desserts"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-62","nameFr":"Tiramisu de la Mama","nameEn":"","descFr":"","descEn":"","note":"Fiches proches fusionnées : (sans description) / Amaretto, mascarpone.","allergens":{},"noAllergen":false,"places":[{"m":"g1","f":"g1-desserts"},{"m":"g2","f":"g2-desserts"},{"m":"g4","f":"g4-desserts"},{"m":"g5","f":"g5-desserts"},{"m":"lunch","f":"l-des"},{"m":"dinner","f":"d-des"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":"","aliasKeys":["tiramisu de la mama","tiramisu de la mama amaretto mascarpone"]},{"id":"r-s-63","nameFr":"Assortiment de 3 mignardises","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g1","f":"g1-desserts"},{"m":"g2","f":"g2-desserts"},{"m":"g3","f":"g3-assortiments-sucres"},{"m":"g4","f":"g4-desserts"},{"m":"g5","f":"g5-desserts"},{"m":"g6","f":"g6-assortiments-sucres"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-65","nameFr":"Club sandwich végétarien & frites","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g3","f":"g3-assortiments-sales"},{"m":"g6","f":"g6-assortiments-sales"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-66","nameFr":"Finger de poulet à la cacahuète","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g3","f":"g3-assortiments-sales"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-67","nameFr":"Gyozas végétariens & gyozas au poulet","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Moutarde":"precaution","Œufs":"precaution","Poissons":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"g3","f":"g3-assortiments-sales"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-68","nameFr":"Mont d’Or & mouillettes","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g3","f":"g3-assortiments-sales"},{"m":"g8","f":"g8-assortiments-sales"},{"m":"g10","f":"g10-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-69","nameFr":"Assortiment de légumes de saison & crème aux herbes","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g3","f":"g3-assortiments-sales"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-70","nameFr":"Crevettes panées, sauce miso à l’ail","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Crustacés":"precaution","Moutarde":"precaution","Œufs":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"g4","f":"g4-entrees"},{"m":"g5","f":"g5-entrees"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-71","nameFr":"Accras de cabillaud & sauce sweet chili","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g4","f":"g4-entrees"},{"m":"g5","f":"g5-entrees"},{"m":"g6","f":"g6-assortiments-sales"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-72","nameFr":"Potimarron rôti au miel & châtaigne","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g4","f":"g4-entrees"},{"m":"g5","f":"g5-entrees"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-73","nameFr":"Saucisse de Toulouse Maison Garcia, purée de pommes de terre & jus moutardé","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"g4","f":"g4-plats"},{"m":"g5","f":"g5-plats"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-74","nameFr":"Légumes rôtis de saison au yaourt grec","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g4","f":"g4-plats"},{"m":"g5","f":"g5-plats"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-75","nameFr":"Saumon mi-cuit & mousseline de patate douce et sauge vierge","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g4","f":"g4-plats"},{"m":"g5","f":"g5-plats"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-76","nameFr":"Risotto de poulpe","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g4","f":"g4-plats"},{"m":"g5","f":"g5-plats"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-77","nameFr":"Parmentier de canard","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g4","f":"g4-plats"},{"m":"g5","f":"g5-plats"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-78","nameFr":"Gua bao végétarien","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g4","f":"g4-plats"},{"m":"g5","f":"g5-plats"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-79","nameFr":"Côte de bœuf maturée, pommes de terre grenailles et salade (+10 €/pers.)","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g4","f":"g4-plats"},{"m":"g5","f":"g5-plats"},{"m":"g7","f":"g7-plats"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-81","nameFr":"Pavlova aux fruits rouges","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g4","f":"g4-desserts"},{"m":"g5","f":"g5-desserts"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-82","nameFr":"Assortiment de charcuterie de la Maison Garcia","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Fruits à coque":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"g6","f":"g6-assortiments-sales"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-83","nameFr":"Bao au poulet Karaguee","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"g6","f":"g6-assortiments-sales"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-84","nameFr":"Légumes en tempura & sauce tartare","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g6","f":"g6-assortiments-sales"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-85","nameFr":"Arancinis gorgonzola & roquette","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g6","f":"g6-assortiments-sales"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-86","nameFr":"Terrine de foie gras maison aux 2 piments, chutney d’oignon rouge & pain toasté","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g7","f":"g7-entrees"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-87","nameFr":"Poireaux sauce gribiche & noisettes","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g7","f":"g7-entrees"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-88","nameFr":"Saumon gravlax, crème aigrelette & focaccia toastée","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g7","f":"g7-entrees"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-89","nameFr":"Saint-Jacques snackées, jus de rôti & mousseline de panais","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g7","f":"g7-plats"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-90","nameFr":"Risotto crémeux de la Mama aux girolles & parmesan affiné 24 mois","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g7","f":"g7-plats"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-91","nameFr":"Suprême de poulet fermier, pommes de terre grenailles, sucrine grillée, sauce vierge","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g7","f":"g7-plats"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-92","nameFr":"Bûche au choix du chef pâtissier","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g7","f":"g7-dessert"},{"m":"g8","f":"g8-assortiment-sucre"},{"m":"g10","f":"g10-dessert"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-93","nameFr":"Pâté en croûte aux morilles","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g8","f":"g8-assortiments-sales"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-94","nameFr":"Focaccia croustillante au saumon gravlax","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g8","f":"g8-assortiments-sales"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-95","nameFr":"Arancinis au gorgonzola & roquette","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g8","f":"g8-assortiments-sales"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-96","nameFr":"Magret tranché & pommes de terre grenailles","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g8","f":"g8-assortiments-sales"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-97","nameFr":"Gambas croustillantes","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g8","f":"g8-assortiments-sales"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-98","nameFr":"Légumes oubliés rôtis","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g8","f":"g8-assortiments-sales"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-99","nameFr":"Bar à soupes","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g9","f":"g9-offre-salee"},{"m":"g10","f":"g10-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-100","nameFr":"Fromage à raclette à volonté","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g9","f":"g9-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-101","nameFr":"Coppa","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g9","f":"g9-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-102","nameFr":"Rosette","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g9","f":"g9-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-103","nameFr":"Jambon de Bodega","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g9","f":"g9-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-104","nameFr":"Jambon blanc Mostoles","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g9","f":"g9-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-105","nameFr":"Pommes de terre","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g9","f":"g9-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-106","nameFr":"Cornichons","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g9","f":"g9-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-107","nameFr":"Bûche poire-chocolat","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g9","f":"g9-dessert"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-108","nameFr":"Croque-monsieur Comté & jambon Mostoles","nameEn":"","descFr":"","descEn":"","note":"","allergens":{"Céleri":"precaution","Gluten":"precaution","Lait":"precaution","Moutarde":"precaution","Œufs":"precaution","Sésame":"precaution","Soja":"precaution","Sulfites":"precaution"},"noAllergen":false,"places":[{"m":"g10","f":"g10-offre-salee"}],"validation":"validated","pub":"published","validatedBy":"Import initial","validatedAt":"12/10/2026"},{"id":"r-s-109","nameFr":"Pâté de la Maison Garcia","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g10","f":"g10-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-110","nameFr":"Assortiment de viandes cuites au feu de bois","nameEn":"","descFr":"canard, saucisse de Toulouse, picanha de bœuf","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g10","f":"g10-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-111","nameFr":"Gratin dauphinois & salade frisée","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g10","f":"g10-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-112","nameFr":"Légumes grillés","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g10","f":"g10-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""},{"id":"r-s-113","nameFr":"Option indiquée dans le document : pavé de saumon","nameEn":"","descFr":"","descEn":"","note":"","allergens":{},"noAllergen":false,"places":[{"m":"g10","f":"g10-offre-salee"}],"validation":"todo","pub":"draft","validatedBy":"","validatedAt":""}]};
+  function agSeedDb(){ return JSON.parse(JSON.stringify(AG_SEED)); }
+
+  // ---------- Stockage (tous les accès passent par ici) ----------
+  let agDb = null;
+  async function agLoad(){
+    try {
+      const res = await window.storage.get('allergenDb', true);
+      const d = JSON.parse(res.value);
+      if (d && d.v === 2) return d;
+    } catch(e){
+      if (!/not found/i.test(String(e && e.message || e))) throw e;
+    }
+    return agSeedDb();
+  }
+  // Point d'écriture unique : c'est ici qu'on branchera la protection serveur (lot sécurité).
+  async function agWrite(key, value){ await window.storage.set(key, JSON.stringify(value), true); }
+  async function agMutate(fn){
+    const db = await agLoad();
+    fn(db);
+    await agWrite('allergenDb', db);
+    agDb = db;
+    return db;
+  }
+  async function agHistoryLoad(){
+    try { const res = await window.storage.get('allergenHistory', true); return JSON.parse(res.value); }
+    catch(e){ return []; }
+  }
+  async function agLog(entries){
+    try {
+      const h = await agHistoryLoad();
+      entries.forEach(function(e){ h.unshift(e); });
+      await agWrite('allergenHistory', h.slice(0,1500));
+    } catch(e){}
+  }
+
+  // ---------- Textes FR / EN ----------
+  const AG_T = {
+    fr:{
+      title:'Allergènes', sub:'Les allergènes déclarés dans nos plats',
+      tabSearch:'Rechercher', tabBrowse:'Parcourir', tabAvoid:'Éviter',
+      searchPh:'Rechercher un plat…', searchHint:'Tape le nom d\'un plat (ex. burger, saumon, gyoza).',
+      noResult:'Aucun plat ne correspond.', menus:'Cartes', groups:'Menus groupes', back:'Retour',
+      recipes:'recettes', recipe:'recette', contains:'Contient', none:'Aucun des 14 allergènes réglementés n\'est déclaré pour cette recette.',
+      avoidTitle:'Allergènes à éviter', avoidHint:'Coche un ou plusieurs allergènes : seuls les plats qui n\'en contiennent aucun sont affichés.',
+      avoidEmpty:'Sélectionne au moins un allergène à éviter.', reset:'Réinitialiser', allMenus:'Toutes les cartes et formules', allFams:'Toutes les familles',
+      match:'correspondante(s)', partial:'Liste partielle : certaines recettes de cette carte ou formule sont en cours de validation et n\'apparaissent pas ici. Cette liste n\'est pas exhaustive.',
+      emptyAll:'Aucune recette publiée pour le moment.',
+      disc1:'Informations basées sur les allergènes déclarés pour chaque recette validée. Elles ne constituent pas une garantie d\'absence d\'allergène : un risque de contamination croisée ne peut jamais être totalement exclu.',
+      disc2:'En cas d\'allergie, signale-la à notre équipe avant de commander.',
+      avoidWarn:'Résultat basé sur les allergènes déclarés. Ce n\'est pas une garantie : signale ton allergie à notre équipe.',
+      error:'Impossible de charger les allergènes pour le moment. Merci de te rapprocher de notre équipe.', loading:'Chargement…', in:'Dans'
+    },
+    en:{
+      title:'Allergens', sub:'Allergens declared in our dishes',
+      tabSearch:'Search', tabBrowse:'Browse', tabAvoid:'Avoid',
+      searchPh:'Search for a dish…', searchHint:'Type a dish name (e.g. burger, salmon, gyoza).',
+      noResult:'No dish matches.', menus:'Menus', groups:'Group menus', back:'Back',
+      recipes:'dishes', recipe:'dish', contains:'Contains', none:'None of the 14 regulated allergens is declared for this dish.',
+      avoidTitle:'Allergens to avoid', avoidHint:'Tick one or more allergens: only dishes containing none of them are shown.',
+      avoidEmpty:'Select at least one allergen to avoid.', reset:'Reset', allMenus:'All menus', allFams:'All categories',
+      match:'matching', partial:'Partial list: some dishes of this menu are still being validated and are not shown here. This list is not exhaustive.',
+      emptyAll:'No published dish yet.',
+      disc1:'Information based on the allergens declared for each validated recipe. It is not a guarantee that a dish is free of allergens: cross-contamination can never be completely ruled out.',
+      disc2:'If you have an allergy, please tell our team before ordering.',
+      avoidWarn:'Result based on declared allergens. This is not a guarantee: please tell our team about your allergy.',
+      error:'Unable to load allergens right now. Please ask our team.', loading:'Loading…', in:'In'
+    }
+  };
+  const agUI = {
+    lang: (function(){ try { return localStorage.getItem('agLang') === 'en' ? 'en' : 'fr'; } catch(e){ return 'fr'; } })(),
+    mode:'search', q:'', menuId:null, famId:null, recipeId:null, avoid:[], avoidMenu:'', avoidFam:''
+  };
+  function agT(k){ return (AG_T[agUI.lang] && AG_T[agUI.lang][k]) || AG_T.fr[k] || k; }
+  function agPick(o, frKey, enKey){ return (agUI.lang === 'en' && o[enKey]) ? o[enKey] : o[frKey]; }
+  function agAllLabel(k){ if (agUI.lang !== 'en') return k; const a = AG_ALLERGENS.find(function(x){ return x.k === k; }); return a ? a.en : k; }
+
+  // ---------- Règles de visibilité et recherche ----------
+  function agVisible(r){
+    if (!r || r.validation !== 'validated' || r.pub !== 'published') return false;
+    return Object.keys(r.allergens || {}).length > 0 || r.noAllergen === true;
+  }
+  function agMenu(id){ return agDb.menus.find(function(m){ return m.id === id; }); }
+  function agPlaces(r){
+    return (r.places || []).map(function(p){
+      const m = agMenu(p.m); const f = m && m.families.find(function(x){ return x.id === p.f; });
+      return (m && f) ? { menu:m, fam:f } : null;
+    }).filter(Boolean);
+  }
+  function agNorm(s){
+    return String(s||'').toLowerCase().replace(/œ/g,'oe').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+  }
+  function agLev(a, b){
+    if (a === b) return 0;
+    const m = a.length, n = b.length; if (!m) return n; if (!n) return m;
+    let prev = []; for (let j=0;j<=n;j++) prev[j] = j;
+    for (let i=1;i<=m;i++){
+      const cur = [i];
+      for (let j=1;j<=n;j++){
+        cur[j] = Math.min(prev[j]+1, cur[j-1]+1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
       }
-      let openGroup = false;
-      cat.items.forEach(function(it, idx){
-        if (it.group !== cat.items[idx-1]?.group){
-          if (openGroup) out += '</div>';
-          if (it.group){
-            out += '<div class="pub-allergene-group" data-group="'+esc(it.group.toLowerCase())+'" style="margin-top:14px">';
-            out += '<div style="font-size:13px;font-weight:700;color:var(--text-accent,#7A5FE0);margin-bottom:2px;padding-left:2px">'+esc(it.group)+'</div>';
-            openGroup = true;
-          } else {
-            openGroup = false;
-          }
-        }
-        out += '<div class="pub-allergene-item" data-name="'+esc(it.name.toLowerCase())+'" style="padding:11px 2px;border-bottom:1px solid var(--border)">'+
-          '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">'+
-            '<div style="font-size:14.5px;font-weight:600;color:var(--text-primary)">'+esc(it.name)+'</div>'+
-          '</div>'+
-          ((it.allergenes && it.allergenes.length) ?
-            '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px">'+it.allergenes.map(function(a){
-              return '<span style="font-size:10.5px;padding:2px 8px;border-radius:999px;border:1.3px solid var(--text-danger,#A32D2D);color:var(--text-danger,#A32D2D);font-weight:600">'+esc(a)+'</span>';
-            }).join('')+'</div>'
-            : '<div style="font-size:12px;color:var(--text-muted);margin-top:3px">Aucun allergène déclaré</div>')+
-        '</div>';
-      });
-      if (openGroup) out += '</div>';
-      out += '</details>';
+      prev = cur;
+    }
+    return prev[n];
+  }
+  function agScore(q, r){
+    const terms = agNorm(q).split(' ').filter(Boolean);
+    if (!terms.length) return 0;
+    const names = [r.nameFr, r.nameEn].map(agNorm).filter(Boolean);
+    const words = names.join(' ').split(' ').filter(Boolean);
+    let total = 0;
+    for (let i=0;i<terms.length;i++){
+      const t = terms[i];
+      let s = 0;
+      if (words.some(function(w){ return w.indexOf(t) === 0; })) s = 4;
+      else if (names.some(function(n){ return n.indexOf(t) >= 0; })) s = 3;
+      else if (t.length >= 4){
+        const tol = t.length >= 7 ? 2 : 1;
+        const ok = words.some(function(w){ return agLev(t, w) <= tol || (w.length > t.length && agLev(t, w.slice(0, t.length)) <= tol); });
+        if (ok) s = 1;
+      }
+      if (!s) return 0;
+      total += s;
+    }
+    return total;
+  }
+  function agVisibleRecipes(){ return agDb.recipes.filter(agVisible); }
+
+  // ---------- Rendu Guest ----------
+  const AG_BORDER = 'border:2.5px solid var(--border-strong,#000)';
+  function agChip(k, strong){
+    return '<span style="display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;border:1.5px solid '+(strong?'#B3261E':'var(--border)')+';background:'+(strong?'#FDECEA':'var(--surface-0)')+';color:'+(strong?'#8C1D18':'var(--text-secondary)')+'">'+esc(agAllLabel(k))+'</span>';
+  }
+  function agPathLabel(r){
+    const ps = agPlaces(r).slice(0,2).map(function(p){ return esc(agPick(p.menu,'nameFr','nameEn'))+' · '+esc(agPick(p.fam,'nameFr','nameEn')); });
+    return ps.join(' — ');
+  }
+  function agRecipeRow(r){
+    const ks = AG_ALLERGENS.map(function(a){ return a.k; }).filter(function(k){ return r.allergens && r.allergens[k]; });
+    return '<div onclick="agAct(\'recipe\',\''+r.id+'\')" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:2.5px solid var(--border-strong,#000);border-radius:12px;background:var(--surface-1);cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000)">'+
+      '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(agPick(r,'nameFr','nameEn'))+'</div>'+
+      '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">'+agPathLabel(r)+'</div>'+
+      (ks.length ? '<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">'+esc(ks.map(agAllLabel).join(' · '))+'</div>' : '')+'</div>'+icon('chevronRight',16)+'</div>';
+  }
+  function agSearchResultsHtml(){
+    const q = agUI.q;
+    if (!agNorm(q)) return '<p style="text-align:center;color:var(--text-muted);font-size:13px;margin:14px 0">'+esc(agT('searchHint'))+'</p>';
+    const res = agVisibleRecipes().map(function(r){ return { r:r, s:agScore(q, r) }; }).filter(function(x){ return x.s > 0; })
+      .sort(function(a,b){ return b.s - a.s || a.r.nameFr.localeCompare(b.r.nameFr); }).slice(0,40);
+    if (!res.length) return '<p style="text-align:center;color:var(--text-muted);font-size:14px;margin:18px 0">'+esc(agT('noResult'))+'</p>';
+    return '<div style="display:flex;flex-direction:column;gap:8px">'+res.map(function(x){ return agRecipeRow(x.r); }).join('')+'</div>';
+  }
+  function agMenuVisibleCount(m, famId){
+    return agVisibleRecipes().filter(function(r){ return (r.places||[]).some(function(p){ return p.m === m.id && (!famId || p.f === famId); }); }).length;
+  }
+  function agMenuHasHidden(m, famId){
+    return agDb.recipes.some(function(r){
+      return r.pub !== 'archived' && !agVisible(r) && (r.places||[]).some(function(p){ return p.m === m.id && (!famId || p.f === famId); });
     });
+  }
+  function agNote(show){ return show ? '<div style="margin:0 0 10px;padding:10px 12px;border-radius:10px;background:#FFF6D6;border:1.5px solid #E0B400;color:#6B5200;font-size:12px;line-height:1.45">'+esc(agT('partial'))+'</div>' : ''; }
+  function agBrowseHtml(){
+    let out = '';
+    if (!agUI.menuId){
+      const cols = [ {bg:'#FFD500',fg:'#1A1A1A'}, {bg:'#E8432B',fg:'#FFFFFF'}, {bg:'#2AB0C5',fg:'#1A1A1A'}, {bg:'#3FAE6A',fg:'#FFFFFF'} ];
+      ['carte','groupe'].forEach(function(type){
+        const ms = agDb.menus.filter(function(m){ return m.type === type && agMenuVisibleCount(m) > 0; });
+        if (!ms.length) return;
+        out += '<div style="font-size:12px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:var(--text-secondary);margin:16px 0 10px">'+esc(agT(type==='carte'?'menus':'groups'))+'</div>';
+        out += '<div style="display:flex;flex-direction:column;gap:12px">'+ms.map(function(m, i){
+          const n = agMenuVisibleCount(m); const c = cols[(type==='carte' ? i : i+2) % cols.length];
+          return '<div onclick="agAct(\'menu\',\''+m.id+'\')" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:2.5px solid var(--border-strong,#000);border-radius:14px;background:var(--surface-1);cursor:pointer;box-shadow:4px 4px 0 var(--border-strong,#000);transform:rotate('+(i%2===0?'-0.5deg':'0.5deg')+')">'+
+            iconBadge(type==='carte' ? 'clipboard' : 'event', c.bg, c.fg)+
+            '<div style="flex:1"><div class="mama-title" style="font-size:16px;color:var(--text-primary)">'+esc(agPick(m,'nameFr','nameEn'))+'</div>'+
+            '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+n+' '+esc(agT(n>1?'recipes':'recipe'))+'</div></div>'+icon('chevronRight',18)+'</div>';
+        }).join('')+'</div>';
+      });
+      if (!out) out = '<p style="text-align:center;color:var(--text-muted);font-size:14px;margin:18px 0">'+esc(agT('emptyAll'))+'</p>';
+      return out;
+    }
+    const m = agMenu(agUI.menuId);
+    if (!m){ agUI.menuId = null; return agBrowseHtml(); }
+    out += '<div onclick="agAct(\'up\')" style="display:flex;align-items:center;gap:6px;margin:12px 0 8px;color:var(--text-secondary);cursor:pointer;font-size:14px;width:fit-content">'+icon('back',18)+'<span>'+esc(agT('back'))+'</span></div>';
+    out += '<h2 class="mama-title" style="font-size:17px;margin:0 0 10px;color:var(--text-primary)">'+esc(agPick(m,'nameFr','nameEn'))+(agUI.famId ? ' › '+esc(agPick(m.families.find(function(f){return f.id===agUI.famId;})||{nameFr:''},'nameFr','nameEn')) : '')+'</h2>';
+    out += agNote(agMenuHasHidden(m, agUI.famId));
+    if (!agUI.famId){
+      out += '<div style="display:flex;flex-direction:column;gap:10px">'+m.families.filter(function(f){ return agMenuVisibleCount(m, f.id) > 0; }).map(function(f){
+        const n = agMenuVisibleCount(m, f.id);
+        return '<div onclick="agAct(\'fam\',\''+f.id+'\')" style="display:flex;align-items:center;gap:12px;padding:14px;border:2.5px solid var(--border-strong,#000);border-radius:12px;background:var(--surface-1);cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000)">'+
+          '<div style="width:28px;height:28px;border-radius:6px;background:var(--surface-0);color:var(--text-secondary);display:flex;align-items:center;justify-content:center">'+icon('clipboard',16)+'</div>'+
+          '<div style="flex:1;font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(agPick(f,'nameFr','nameEn'))+'<span style="font-weight:600;color:var(--text-muted);font-size:12px"> · '+n+'</span></div>'+icon('chevronRight',16)+'</div>';
+      }).join('')+'</div>';
+    } else {
+      const rs = agVisibleRecipes().filter(function(r){ return (r.places||[]).some(function(p){ return p.m === m.id && p.f === agUI.famId; }); })
+        .sort(function(a,b){ return a.nameFr.localeCompare(b.nameFr); });
+      out += '<div style="display:flex;flex-direction:column;gap:8px">'+rs.map(agRecipeRow).join('')+'</div>';
+    }
+    return out;
+  }
+  function agAvoidResults(){
+    if (!agUI.avoid.length) return '<p style="text-align:center;color:var(--text-muted);font-size:13px;margin:12px 0">'+esc(agT('avoidEmpty'))+'</p>';
+    let rs = agVisibleRecipes().filter(function(r){ return !agUI.avoid.some(function(a){ return r.allergens && r.allergens[a]; }); });
+    if (agUI.avoidMenu){
+      rs = rs.filter(function(r){ return (r.places||[]).some(function(p){ return p.m === agUI.avoidMenu && (!agUI.avoidFam || p.f === agUI.avoidFam); }); });
+    }
+    rs.sort(function(a,b){ return a.nameFr.localeCompare(b.nameFr); });
+    return '<div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 8px"><span style="font-size:14px;font-weight:800;color:var(--text-primary)">'+rs.length+' '+esc(agT(rs.length>1?'recipes':'recipe'))+' '+esc(agT('match'))+'</span>'+
+      '<span onclick="agAct(\'resetAvoid\')" style="font-size:13px;font-weight:700;color:var(--text-accent,#185FA5);cursor:pointer">'+esc(agT('reset'))+'</span></div>'+
+      '<div style="margin:0 0 10px;padding:10px 12px;border-radius:10px;background:#FDECEA;border:1.5px solid #B3261E;color:#8C1D18;font-size:12px;font-weight:600;line-height:1.45">'+esc(agT('avoidWarn'))+'</div>'+
+      '<div style="display:flex;flex-direction:column;gap:8px">'+rs.map(agRecipeRow).join('')+'</div>';
+  }
+  function agAvoidHtml(){
+    let out = '<h2 class="mama-title" style="font-size:16px;margin:14px 0 4px;color:var(--text-primary)">'+esc(agT('avoidTitle'))+'</h2>'+
+      '<p style="font-size:13px;color:var(--text-secondary);margin:0 0 10px">'+esc(agT('avoidHint'))+'</p>';
+    out += '<div style="display:flex;flex-wrap:wrap;gap:8px">'+AG_ALLERGENS.map(function(a){
+      const on = agUI.avoid.indexOf(a.k) >= 0;
+      return '<div onclick="agAct(\'toggleAvoid\',\''+a.k.replace(/'/g,"\\'")+'\')" style="padding:8px 12px;border-radius:999px;font-size:13px;font-weight:700;cursor:pointer;border:2px solid '+(on?'#B3261E':'var(--border-strong,#000)')+';background:'+(on?'#B3261E':'var(--surface-1)')+';color:'+(on?'#fff':'var(--text-primary)')+'">'+(on?'✕ ':'')+esc(agAllLabel(a.k))+'</div>';
+    }).join('')+'</div>';
+    const ms = agDb.menus.filter(function(m){ return agMenuVisibleCount(m) > 0; });
+    const selStyle = 'width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px';
+    out += '<div style="display:flex;flex-direction:column;gap:8px;margin-top:12px"><select onchange="agAct(\'avoidMenu\',this.value)" style="'+selStyle+'"><option value="">'+esc(agT('allMenus'))+'</option>'+
+      ms.map(function(m){ return '<option value="'+m.id+'"'+(agUI.avoidMenu===m.id?' selected':'')+'>'+esc(agPick(m,'nameFr','nameEn'))+'</option>'; }).join('')+'</select>';
+    if (agUI.avoidMenu){
+      const m = agMenu(agUI.avoidMenu);
+      if (m) out += '<select onchange="agAct(\'avoidFam\',this.value)" style="'+selStyle+'"><option value="">'+esc(agT('allFams'))+'</option>'+
+        m.families.filter(function(f){ return agMenuVisibleCount(m, f.id) > 0; }).map(function(f){ return '<option value="'+f.id+'"'+(agUI.avoidFam===f.id?' selected':'')+'>'+esc(agPick(f,'nameFr','nameEn'))+'</option>'; }).join('')+'</select>';
+    }
     out += '</div>';
-    out += '<p id="pub-allergenes-empty" style="display:none;text-align:center;color:var(--text-muted);font-size:14px;padding:24px">Aucun plat ne correspond à ta recherche.</p>';
+    out += agAvoidResults();
+    return out;
+  }
+  function agDetailHtml(){
+    const r = agDb.recipes.find(function(x){ return x.id === agUI.recipeId; });
+    if (!r || !agVisible(r)){ agUI.recipeId = null; return ''; }
+    const keys = AG_ALLERGENS.map(function(a){ return a.k; }).filter(function(k){ return r.allergens && r.allergens[k]; });
+    let out = '<div onclick="agAct(\'closeRecipe\')" style="display:flex;align-items:center;gap:6px;margin:14px 0 10px;color:var(--text-secondary);cursor:pointer;font-size:14px;width:fit-content">'+icon('back',18)+'<span>'+esc(agT('back'))+'</span></div>';
+    out += '<div style="padding:16px;'+AG_BORDER+';border-radius:14px;background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000)">'+
+      '<h2 class="mama-title" style="font-size:18px;margin:0 0 4px;color:var(--text-primary)">'+esc(agPick(r,'nameFr','nameEn'))+'</h2>'+
+      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">'+agPathLabel(r)+'</div>'+
+      ((agUI.lang==='en' ? (r.descEn||r.descFr) : r.descFr) ? '<p style="font-size:13px;color:var(--text-secondary);margin:0 0 12px;line-height:1.5">'+esc(agUI.lang==='en' ? (r.descEn||r.descFr) : r.descFr)+'</p>' : '')+
+      (keys.length
+        ? '<div style="font-size:12px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:#8C1D18;margin-bottom:8px">'+esc(agT('contains'))+'</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+keys.map(function(k){ return agChip(k, true); }).join('')+'</div>'
+        : '<p style="font-size:14px;font-weight:600;color:var(--text-primary);margin:0">'+esc(agT('none'))+'</p>')+
+    '</div>';
+    return out;
+  }
+  function agDisclaimerHtml(){
+    return '<div style="margin:16px 0 24px;padding:14px;border-radius:10px;background:var(--surface-0);border:1.5px solid var(--border)">'+
+      '<p style="color:var(--text-secondary);font-size:12px;margin:0 0 8px;line-height:1.5">'+esc(agT('disc1'))+'</p>'+
+      '<p style="color:var(--text-secondary);font-size:12px;margin:0;line-height:1.5;font-weight:700">'+esc(agT('disc2'))+'</p></div>';
+  }
+  function agGuestHtml(){
+    if (!agDb) return '<div style="padding:24px;text-align:center;color:var(--text-muted)">'+esc(agT('loading'))+'</div>';
+    let out = '<div style="padding:0 16px">';
+    out += '<div style="display:flex;justify-content:flex-end"><div style="display:inline-flex;border:2px solid var(--border-strong,#000);border-radius:999px;overflow:hidden">'+
+      ['fr','en'].map(function(l){ const on = agUI.lang === l;
+        return '<div onclick="agAct(\'lang\',\''+l+'\')" style="padding:5px 14px;font-size:12px;font-weight:800;cursor:pointer;background:'+(on?'#1A1A1A':'var(--surface-1)')+';color:'+(on?'#fff':'var(--text-secondary)')+'">'+l.toUpperCase()+'</div>'; }).join('')+
+      '</div></div>';
+    if (agUI.recipeId){
+      out += agDetailHtml();
+    }
+    if (!agUI.recipeId){
+      out += '<div style="display:flex;gap:6px;margin:12px 0 4px">'+[['search','tabSearch'],['browse','tabBrowse'],['avoid','tabAvoid']].map(function(t){
+        const on = agUI.mode === t[0];
+        return '<div onclick="agAct(\'mode\',\''+t[0]+'\')" style="flex:1;text-align:center;padding:11px 4px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer;border:2.5px solid var(--border-strong,#000);background:'+(on?'var(--bg-accent,#FFD500)':'var(--surface-1)')+';color:var(--text-primary);box-shadow:'+(on?'none':'2px 2px 0 var(--border-strong,#000)')+'">'+esc(agT(t[1]))+'</div>';
+      }).join('')+'</div>';
+      if (agUI.mode === 'search'){
+        out += '<input id="ag-search" type="search" autocomplete="off" placeholder="'+esc(agT('searchPh'))+'" value="'+esc(agUI.q)+'" oninput="agAct(\'q\',this.value)" style="width:100%;box-sizing:border-box;padding:13px 14px;margin:10px 0;border-radius:10px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:16px">'+
+          '<div id="ag-results">'+agSearchResultsHtml()+'</div>';
+      } else if (agUI.mode === 'browse'){
+        out += agBrowseHtml();
+      } else {
+        out += agAvoidHtml();
+      }
+    }
+    out += agDisclaimerHtml();
+    out += '</div>';
+    return out;
+  }
+  function agRerender(keepFocus){
+    const el = document.getElementById('ag-root');
+    if (el) el.innerHTML = agGuestHtml();
+    if (keepFocus){ const i = document.getElementById('ag-search'); if (i){ i.focus(); try { i.setSelectionRange(i.value.length, i.value.length); } catch(e){} } }
+  }
+  // Rafraîchit les données depuis la base (un plat masqué par un manager disparaît vite côté Guest).
+  let agLastJson = '';
+  async function agRefresh(){
+    if (!document.getElementById('ag-root') || !agDb) return;
+    try {
+      const fresh = await agLoad();
+      const j = JSON.stringify(fresh);
+      if (j === agLastJson) return;
+      agLastJson = j; agDb = fresh;
+      agRerender(agUI.mode === 'search' && !agUI.recipeId && document.activeElement && document.activeElement.id === 'ag-search');
+    } catch(e){}
+  }
+  try {
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden) agRefresh(); });
+    setInterval(agRefresh, 45000);
+  } catch(e){}
+  window.agAct = function(type, val){
+    if (type === 'q'){
+      agUI.q = val;
+      const r = document.getElementById('ag-results'); if (r) r.innerHTML = agSearchResultsHtml();
+      return;
+    }
+    if (type === 'lang'){ agUI.lang = val; try { localStorage.setItem('agLang', val); } catch(e){} }
+    else if (type === 'mode'){ agUI.mode = val; agUI.recipeId = null; }
+    else if (type === 'menu'){ agUI.menuId = val; agUI.famId = null; }
+    else if (type === 'fam'){ agUI.famId = val; }
+    else if (type === 'up'){ if (agUI.famId) agUI.famId = null; else agUI.menuId = null; }
+    else if (type === 'recipe'){ agUI.recipeId = val; try { window.scrollTo(0,0); } catch(e){} }
+    else if (type === 'closeRecipe'){ agUI.recipeId = null; }
+    else if (type === 'toggleAvoid'){ const i = agUI.avoid.indexOf(val); if (i>=0) agUI.avoid.splice(i,1); else agUI.avoid.push(val); }
+    else if (type === 'resetAvoid'){ agUI.avoid = []; agUI.avoidMenu = ''; agUI.avoidFam = ''; }
+    else if (type === 'avoidMenu'){ agUI.avoidMenu = val; agUI.avoidFam = ''; }
+    else if (type === 'avoidFam'){ agUI.avoidFam = val; }
+    agRerender(type === 'lang' && agUI.mode === 'search' && !agUI.recipeId);
+  };
+
+
+  // ================= IMPORT EXCEL =================
+  const AG_IMP_COLS = [ ['arachid','Arachides'],['celeri','Céleri'],['gluten','Gluten'],['cereale','Gluten'],['crustac','Crustacés'],['fruits a coque','Fruits à coque'],['lait','Lait'],['lupin','Lupin'],['mollusq','Mollusques'],['moutarde','Moutarde'],['oeuf','Œufs'],['poisson','Poissons'],['sesame','Sésame'],['soja','Soja'],['sulfite','Sulfites'] ];
+  const AG_IMP_SKIP_SECTION = /^(boissons?|animation|apero|aperitif|accueil)\b/;
+  const AG_IMP_STOP = ['de','la','le','du','des','l','ou','a','et','au','aux'];
+  function agImpLoose(s){ return agNorm(s).split(' ').filter(function(w){ return w && AG_IMP_STOP.indexOf(w) < 0; }).join(' '); }
+  function agImpSlug(s){ return agNorm(s).replace(/ /g,'-').slice(0,30) || 'x'; }
+  function agImpTitle(s){ const t = String(s||'').trim().toLowerCase(); return t.charAt(0).toUpperCase() + t.slice(1); }
+  function agImpSplitLabel(label){
+    const i = label.indexOf(' — ');
+    return i > 0 ? { nameFr: label.slice(0,i).trim(), descFr: label.slice(i+3).trim() } : { nameFr: label.trim(), descFr: '' };
+  }
+  function agImpIsSection(label){ return label.toUpperCase() === label && /[A-ZÀ-Ý]/.test(label); }
+  function agImpSig(allergens){ return (allergens||[]).slice().sort().join('|'); }
+
+  // rows : tableau de lignes (tableaux de cellules) d'un onglet. Retourne { title, menuHint, items, skipped, error }
+  function agImpParseSheet(title, rows){
+    const res = { title:title, menuHint:'', items:[], skipped:[], error:'' };
+    const a1 = String((rows[0] && rows[0][0]) || '').trim();
+    res.menuHint = a1.split(' — ')[0].trim();
+    let headerIdx = -1, colMap = {};
+    for (let i=0;i<Math.min(rows.length,12);i++){
+      const r = rows[i] || [];
+      if (!/^plats/.test(agNorm(r[0]))) continue;
+      const map = {};
+      for (let j=1;j<r.length;j++){
+        const h = agNorm(r[j]);
+        for (let k=0;k<AG_IMP_COLS.length;k++){ if (h && h.indexOf(AG_IMP_COLS[k][0]) >= 0){ map[j] = AG_IMP_COLS[k][1]; break; } }
+      }
+      if (new Set(Object.keys(map).map(function(j){ return map[j]; })).size >= 14){ headerIdx = i; colMap = map; break; }
+    }
+    if (headerIdx < 0){ res.error = 'Colonnes d\'allergènes introuvables (14 attendues).'; return res; }
+    let section = '', skipping = false; const skipCount = {};
+    for (let i=headerIdx+1;i<rows.length;i++){
+      const r = rows[i] || [];
+      const label = String(r[0] == null ? '' : r[0]).trim();
+      if (!label) continue;
+      const n = agNorm(label);
+      if (/^(cases allergenes|a completer)/.test(n) || /^[¹²³]/.test(label)) continue;
+      const marks = [];
+      Object.keys(colMap).forEach(function(j){
+        const c = r[j]; if (c != null && String(c).trim() !== '' && marks.indexOf(colMap[j]) < 0) marks.push(colMap[j]);
+      });
+      if (!marks.length && agImpIsSection(label)){
+        section = agImpTitle(label.split(' — ')[0]);
+        skipping = AG_IMP_SKIP_SECTION.test(agNorm(section));
+        if (skipping) skipCount[section] = 0;
+        continue;
+      }
+      if (skipping){ skipCount[section]++; continue; }
+      res.items.push({ sheet:title, section:section, label:label, allergens:marks });
+    }
+    Object.keys(skipCount).forEach(function(s){ res.skipped.push({ sheet:title, section:s, count:skipCount[s] }); });
+    return res;
+  }
+
+  function agImpFindMenu(db, hint, title){
+    const hs = [agImpLoose(hint), agImpLoose(title)].filter(Boolean);
+    return db.menus.find(function(m){ return hs.indexOf(agImpLoose(m.nameFr)) >= 0 || (m.nameEn && hs.indexOf(agImpLoose(m.nameEn)) >= 0); }) || null;
+  }
+
+  function agImpPlan(db, sheets, opts){
+    const plan = { opts:opts, newFamilies:[], recipes:[], unknown:[], skipped:[], sheetErrors:[], divergences:[], dupNames:[], sheetSummary:[],
+      sum:{ rows:0, newRec:0, newValidated:0, newTodo:0, same:0, keep:0, conflicts:0, newPlaces:0, newFams:0, skippedRows:0 } };
+    const entries = [];
+    sheets.forEach(function(sh){
+      if (sh.error){ plan.sheetErrors.push(sh.title+' : '+sh.error); return; }
+      sh.skipped.forEach(function(s){ plan.skipped.push(s); plan.sum.skippedRows += s.count; });
+      const menu = agImpFindMenu(db, sh.menuHint, sh.title);
+      if (!menu){ plan.unknown.push({ sheet:sh.title, hint:sh.menuHint, rows:sh.items.length }); return; }
+      plan.sheetSummary.push({ sheet:sh.title, menu:menu.nameFr, rows:sh.items.length });
+      sh.items.forEach(function(it){
+        const famName = (menu.type === 'carte') ? sh.title : (it.section || 'Divers');
+        let fam = menu.families.find(function(f){ return agImpLoose(f.nameFr) === agImpLoose(famName); });
+        if (!fam) fam = plan.newFamilies.find(function(f){ return f.menuId === menu.id && agImpLoose(f.nameFr) === agImpLoose(famName); });
+        if (!fam){
+          let id = menu.id+'-'+agImpSlug(famName), k = 2;
+          while (menu.families.some(function(f){ return f.id === id; }) || plan.newFamilies.some(function(f){ return f.id === id && f.menuId === menu.id; })) id = menu.id+'-'+agImpSlug(famName)+(k++);
+          fam = { menuId:menu.id, id:id, nameFr:famName };
+          plan.newFamilies.push(fam);
+        }
+        entries.push({ menu:menu, fam:fam, it:it });
+        plan.sum.rows++;
+      });
+    });
+    // regroupe par libellé complet puis par signature d'allergènes
+    const byKey = {};
+    entries.forEach(function(e){
+      const key = agNorm(e.it.label);
+      (byKey[key] = byKey[key] || []).push(e);
+    });
+    const cands = [];
+    Object.keys(byKey).forEach(function(key){
+      const bySig = {};
+      byKey[key].forEach(function(e){ const s = agImpSig(e.it.allergens); (bySig[s] = bySig[s] || []).push(e); });
+      const sigs = Object.keys(bySig);
+      if (sigs.length > 1){
+        plan.divergences.push({ label:byKey[key][0].it.label, variants: sigs.map(function(s){ return { allergens: s ? s.split('|') : [], where: bySig[s].map(function(e){ return e.menu.nameFr+' · '+e.fam.nameFr; }) }; }) });
+      }
+      sigs.forEach(function(s){
+        const es = bySig[s]; const sp = agImpSplitLabel(es[0].it.label);
+        const places = [];
+        es.forEach(function(e){ if (!places.some(function(p){ return p.m === e.menu.id && p.f === e.fam.id; })) places.push({ m:e.menu.id, f:e.fam.id }); });
+        cands.push({ key:key, sig:s, nameFr:sp.nameFr, descFr:sp.descFr, label:es[0].it.label, allergens:es[0].it.allergens.slice(), places:places, multi:sigs.length > 1, conflictId:'' });
+      });
+    });
+    // rapproche des recettes existantes
+    cands.forEach(function(c, idx){
+      const matches = db.recipes.filter(function(r){ return agNorm(r.nameFr+' '+(r.descFr||'')) === c.key || (r.aliasKeys||[]).indexOf(c.key) >= 0; });
+      const sameSig = matches.find(function(r){ return agImpSig(Object.keys(r.allergens||{})) === c.sig && (!!r.noAllergen === false); });
+      const ex = sameSig || matches[0] || null;
+      if (!ex){ c.action = 'new'; }
+      else if (sameSig || (!c.allergens.length && !ex.noAllergen && !Object.keys(ex.allergens||{}).length)){ c.action = 'same'; c.existingId = ex.id; }
+      else if (!c.allergens.length){ c.action = 'keep'; c.existingId = ex.id; }
+      else { c.action = 'conflict'; c.existingId = ex.id; c.existingAl = Object.keys(ex.allergens||{}); }
+      c.idx = idx;
+      // lieux réellement nouveaux
+      c.newPlaces = c.places.filter(function(p){ return !ex || !(ex.places||[]).some(function(q){ return q.m === p.m && q.f === p.f; }); });
+      if (c.action === 'new'){ plan.sum.newRec++; if (c.allergens.length) plan.sum.newValidated++; else plan.sum.newTodo++; }
+      else if (c.action === 'same') plan.sum.same++;
+      else if (c.action === 'keep') plan.sum.keep++;
+      else plan.sum.conflicts++;
+      plan.sum.newPlaces += c.newPlaces.length;
+    });
+    // doublons probables : même nom, descriptions différentes
+    const byName = {};
+    cands.filter(function(c){ return c.action === 'new'; }).forEach(function(c){ (byName[agNorm(c.nameFr)] = byName[agNorm(c.nameFr)] || []).push(c); });
+    Object.keys(byName).forEach(function(k){
+      const list = byName[k]; if (list.length < 2) return;
+      if (list.every(function(c){ return c.key === list[0].key; })) return;
+      plan.dupNames.push({ name:list[0].nameFr, variants:list.map(function(c){ return c.descFr || '(sans description)'; }) });
+    });
+    plan.sum.newFams = plan.newFamilies.length;
+    plan.recipes = cands;
+    return plan;
+  }
+
+  // Applique le plan sur db (mutation). replace = { [idx]: true } pour les conflits à remplacer. Retourne les lignes d'historique.
+  function agImpApply(db, plan, replace, user, idPrefix){
+    const logs = []; const now = (typeof nowLabel === 'function') ? nowLabel() : '';
+    plan.newFamilies.forEach(function(nf){
+      const m = db.menus.find(function(x){ return x.id === nf.menuId; });
+      if (m && !m.families.some(function(f){ return f.id === nf.id; })) m.families.push({ id:nf.id, nameFr:nf.nameFr, nameEn:'' });
+    });
+    const toAl = function(list){ const o = {}; list.forEach(function(a){ o[a] = 'precaution'; }); return o; };
+    plan.recipes.forEach(function(c, i){
+      let r = c.existingId ? db.recipes.find(function(x){ return x.id === c.existingId; }) : null;
+      if (c.action === 'new'){
+        const ok = plan.opts.markValidated && c.allergens.length > 0;
+        r = { id:'r-'+(idPrefix || Date.now().toString(36))+'-'+i, nameFr:c.nameFr, nameEn:'', descFr:c.descFr, descEn:'', note:'', allergens:toAl(c.allergens), noAllergen:false, places:[],
+              validation: ok ? 'validated' : 'todo', pub: ok ? 'published' : 'draft', validatedBy: ok ? user+' (import Excel)' : '', validatedAt: ok ? now : '' };
+        db.recipes.push(r);
+        logs.push({ recipeId:r.id, recipeName:r.nameFr, action:'Import Excel', detail:'Nouvelle recette'+(c.allergens.length ? ' · allergènes : '+c.allergens.join(', ') : ' · à compléter') });
+      } else if (c.action === 'conflict' && r && replace && replace[c.idx]){
+        const before = Object.keys(r.allergens||{}).join(', ') || 'aucun';
+        r.allergens = toAl(c.allergens); r.noAllergen = false;
+        const ok = plan.opts.markValidated;
+        r.validation = ok ? 'validated' : 'revalidate';
+        if (ok){ r.validatedBy = user+' (import Excel)'; r.validatedAt = now; }
+        logs.push({ recipeId:r.id, recipeName:r.nameFr, action:'Import Excel', detail:'Allergènes remplacés : '+before+' → '+c.allergens.join(', ')+(ok ? '' : ' (à revalider)') });
+      }
+      if (r){
+        c.places.forEach(function(p){ if (!r.places.some(function(q){ return q.m === p.m && q.f === p.f; })) r.places.push({ m:p.m, f:p.f }); });
+      }
+    });
+    return logs;
+  }
+  if (typeof module !== 'undefined' && module.exports) module.exports = { agImpParseSheet, agImpPlan, agImpApply };
+
+  // ---------- Écran d'import Excel (Manager) ----------
+  let agImpPlanObj = null;
+  function agLoadXlsx(){
+    return new Promise(function(resolve, reject){
+      if (window.XLSX) return resolve(window.XLSX);
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = function(){ resolve(window.XLSX); };
+      s.onerror = function(){ reject(new Error('xlsx')); };
+      document.head.appendChild(s);
+    });
+  }
+  function agmImportHtml(a){
+    const imp = a.imp || null; const plan = agImpPlanObj;
+    let out = agmHeader('Importer des fichiers Excel', "agmAct('view','dash')") + agmFlash(a);
+    const box = 'margin:6px 16px;padding:12px 14px;border:2px solid var(--border-strong,#000);border-radius:12px;background:var(--surface-1)';
+    const small = 'font-size:12px;color:var(--text-secondary);line-height:1.5';
+    out += '<div style="'+box+'"><div style="font-size:14px;font-weight:800;color:var(--text-primary);margin-bottom:6px">1. Choisis tes fichiers</div>'+
+      '<p style="'+small+';margin:0 0 10px">Cartes Lunch / Dinner et menus groupes (.xlsx). Rien n\'est modifié avant ta confirmation : tu verras d\'abord un aperçu.</p>'+
+      '<input id="agm-imp-file" type="file" accept=".xlsx,.xls" multiple onchange="agmAct(\'impFiles\')" style="width:100%;font-size:14px"></div>';
+    if (imp && imp.busy) out += '<div style="margin:10px 16px;text-align:center;color:var(--text-muted);font-size:14px">Lecture des fichiers…</div>';
+    if (!imp || imp.busy || !plan) return out;
+    const s = plan.sum;
+    const tile = function(n, label, color){ return '<div style="padding:10px 6px;text-align:center;border:2px solid var(--border-strong,#000);border-radius:10px;background:var(--surface-1)"><div style="font-size:22px;font-weight:800;color:'+color+'">'+n+'</div><div style="font-size:11px;font-weight:700;color:var(--text-secondary)">'+label+'</div></div>'; };
+    out += '<div style="margin:12px 16px 4px;font-size:14px;font-weight:800;color:var(--text-primary)">2. Aperçu</div>';
+    out += '<div style="padding:0 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+
+      tile(s.newRec,'Nouvelles recettes','#185FA5')+tile(s.newValidated,'avec allergènes','#3B6D11')+tile(s.newTodo,'à compléter','#7A5600')+
+      tile(s.same,'déjà présentes','var(--text-primary)')+tile(s.conflicts,'écarts à arbitrer','#8C1D18')+tile(s.newFams,'familles à créer','var(--text-primary)')+'</div>';
+    out += '<p style="'+small+';margin:8px 16px">'+s.rows+' lignes lues · '+s.newPlaces+' placement(s) dans les cartes et menus · '+s.skippedRows+' ligne(s) ignorée(s) (boissons, apéritif, animation).</p>';
+    const det = function(title, body, open){ return '<details'+(open?' open':'')+' style="'+box+'"><summary style="font-size:13px;font-weight:800;color:var(--text-primary);cursor:pointer">'+title+'</summary><div style="margin-top:8px;'+small+'">'+body+'</div></details>'; };
+    if (plan.sheetErrors.length) out += det('⚠️ Onglets illisibles ('+plan.sheetErrors.length+')', plan.sheetErrors.map(esc).join('<br>'), true);
+    if (plan.unknown.length) out += det('⚠️ Onglets sans menu correspondant ('+plan.unknown.length+')', plan.unknown.map(function(u){ return esc(u.sheet)+' ('+u.rows+' lignes) — crée d\'abord ce menu dans « Menus & familles », puis relance l\'import.'; }).join('<br>'), true);
+    if (plan.conflicts) {}
+    const confl = plan.recipes.filter(function(c){ return c.action === 'conflict'; });
+    if (confl.length){
+      out += det('⚠️ Écarts avec l\'existant ('+confl.length+') : par défaut, l\'existant est conservé',
+        confl.map(function(c){
+          return '<label style="display:block;margin:0 0 10px;color:var(--text-primary)"><input type="checkbox" '+((imp.replace||{})[c.idx]?'checked':'')+' onchange="agmAct(\'impReplace\','+c.idx+')" style="width:18px;height:18px;vertical-align:middle;margin-right:6px"><b>'+esc(c.nameFr)+'</b><br>'+
+            '<span style="color:var(--text-secondary)">Actuel : '+esc((c.existingAl||[]).join(', ')||'aucun')+'<br>Fichier : '+esc(c.allergens.join(', '))+'</span></label>';
+        }).join(''), true);
+    }
+    if (plan.divergences.length) out += det('Même plat, allergènes différents selon les feuilles ('+plan.divergences.length+') — gardés comme variantes séparées',
+      plan.divergences.map(function(d){ return '<b>'+esc(d.label)+'</b>'+d.variants.map(function(v){ return '<br>• '+esc(v.where.join(', '))+' : '+esc(v.allergens.join(', ')||'aucun'); }).join(''); }).join('<br><br>'), true);
+    if (plan.dupNames.length) out += det('Noms proches, fiches distinctes ('+plan.dupNames.length+') — jamais fusionnées automatiquement',
+      plan.dupNames.map(function(d){ return '<b>'+esc(d.name)+'</b> : '+d.variants.map(esc).join(' / '); }).join('<br>'));
+    out += det('Feuilles lues ('+plan.sheetSummary.length+')', plan.sheetSummary.map(function(x){ return esc(x.sheet)+' → '+esc(x.menu)+' ('+x.rows+')'; }).join('<br>'));
+    if (plan.skipped.length) out += det('Sections ignorées ('+plan.skipped.length+')', plan.skipped.map(function(x){ return esc(x.sheet)+' · '+esc(x.section)+' ('+x.count+')'; }).join('<br>'));
+    out += '<div style="'+box+'"><div style="font-size:14px;font-weight:800;color:var(--text-primary);margin-bottom:8px">3. Confirmer</div>'+
+      '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--text-primary);cursor:pointer"><input type="checkbox" '+(imp.markValidated?'checked':'')+' onchange="agmAct(\'impValid\')" style="width:20px;height:20px;flex-shrink:0">'+
+      '<span>Marquer comme <b>validées et publiées</b> les recettes dont au moins un allergène est coché. Les autres restent « À compléter » et invisibles côté Guest.</span></label>'+
+      '<button onclick="agmAct(\'impApply\')" style="width:100%;margin-top:12px;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#3FAE6A;color:#fff;font-size:14px;font-weight:800;cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000)">Confirmer l\'import</button></div>';
     return out;
   }
 
+  // ================= ESPACE MANAGER =================
+  const AGM_VALID = { todo:'À compléter', validated:'Validée', revalidate:'À revalider' };
+  const AGM_PUB = { draft:'Brouillon', published:'Publiée', hidden:'Masquée', archived:'Archivée' };
+  function agmNew(){ return { view:'dash', q:'', fMenu:'', fStatus:'', editingId:null, draft:null, msg:'', err:'' }; }
+  function agmBlankDraft(){ return { id:null, nameFr:'', nameEn:'', descFr:'', descEn:'', note:'', allergens:{}, noAllergen:false, places:[] }; }
+  function agmDraftFrom(r){ return JSON.parse(JSON.stringify({ id:r.id, nameFr:r.nameFr, nameEn:r.nameEn||'', descFr:r.descFr||'', descEn:r.descEn||'', note:r.note||'', allergens:r.allergens||{}, noAllergen:!!r.noAllergen, places:r.places||[] })); }
+  function agmPersist(){ try { persistSessionSnapshot(); } catch(e){} }
+  function agmSync(){
+    const a = state.agm; if (!a || !a.draft) return;
+    ['nameFr','nameEn','descFr','descEn','note'].forEach(function(f){
+      const el = document.getElementById('agm-'+f); if (el) a.draft[f] = el.value;
+    });
+  }
+  function agmRender(){
+    const el = document.getElementById('agm-root');
+    if (el) el.innerHTML = agmHtml();
+    agmPersist();
+  }
+  function agmStatusLabel(r){
+    if (r.pub === 'archived') return 'Archivée';
+    return AGM_VALID[r.validation]+' · '+AGM_PUB[r.pub];
+  }
+  function agmBadge(txt, bg, fg){ return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:800;background:'+bg+';color:'+fg+';white-space:nowrap">'+esc(txt)+'</span>'; }
+  function agmBadges(r){
+    let out = '';
+    out += r.validation === 'validated' ? agmBadge('Validée','#EAF3DE','#3B6D11') : agmBadge(AGM_VALID[r.validation],'#FFF1C9','#7A5600');
+    if (r.pub === 'published') out += ' '+agmBadge(r.validation==='validated' ? 'Publiée (visible)' : 'Publiée (masquée : non validée)', r.validation==='validated' ? '#DCEBFA' : '#F3DDDD', r.validation==='validated' ? '#185FA5' : '#8C1D18');
+    else out += ' '+agmBadge(AGM_PUB[r.pub],'var(--surface-0)','var(--text-secondary)');
+    if (Object.keys(r.allergens||{}).some(function(k){ return r.allergens[k] === 'supplier'; })) out += ' '+agmBadge('Vérif. fournisseur','#F6E1FA','#7A2D8C');
+    return out;
+  }
+  function agmStats(db){
+    const live = db.recipes.filter(function(r){ return r.pub !== 'archived'; });
+    return {
+      total: live.length,
+      validated: live.filter(function(r){ return r.validation === 'validated'; }).length,
+      pending: live.filter(function(r){ return r.validation !== 'validated'; }).length,
+      supplier: live.filter(function(r){ return Object.keys(r.allergens||{}).some(function(k){ return r.allergens[k] === 'supplier'; }); }).length,
+      published: live.filter(function(r){ return r.pub === 'published' && r.validation === 'validated'; }).length,
+      hidden: live.filter(function(r){ return r.pub === 'hidden' || (r.pub === 'published' && r.validation !== 'validated'); }).length,
+      archived: db.recipes.length - live.length
+    };
+  }
+  function agmHeader(title, backAct){
+    return '<div style="padding:16px 16px 8px"><div style="padding:14px 16px;border-radius:14px;'+AG_BORDER+';background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+      '<div onclick="'+backAct+'" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+      '<h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0;flex:1">'+esc(title)+'</h1></div></div>';
+  }
+  function agmFlash(a){
+    return (a.msg ? '<div style="margin:4px 16px 8px;padding:10px 12px;border-radius:10px;background:var(--bg-success,#EAF3DE);color:var(--text-success,#3B6D11);font-size:13px;font-weight:600">'+esc(a.msg)+'</div>' : '')+
+      (a.err ? '<div style="margin:4px 16px 8px;padding:10px 12px;border-radius:10px;background:#FDECEA;color:#8C1D18;font-size:13px;font-weight:600">'+esc(a.err)+'</div>' : '');
+  }
+  function agmHtml(){
+    const a = state.agm || agmNew();
+    if (!agDb) return '<div style="padding:30px;text-align:center;color:var(--text-muted)">Chargement…</div>';
+    if (a.view === 'edit') return agmEditHtml(a);
+    if (a.view === 'menus') return agmMenusHtml(a);
+    if (a.view === 'history') return agmHistoryHtml(a);
+    if (a.view === 'import') return agmImportHtml(a);
+    if (a.view === 'auth') return agmAuthHtml(a);
+    return agmDashHtml(a);
+  }
+  function agmDashHtml(a){
+    const s = agmStats(agDb);
+    let out = agmHeader('Gestion des allergènes', "appAction('goAdminMenu')") + agmFlash(a);
+    const tile = function(n, label, color){ return '<div style="padding:10px 6px;text-align:center;border:2px solid var(--border-strong,#000);border-radius:10px;background:var(--surface-1)"><div style="font-size:22px;font-weight:800;color:'+color+'">'+n+'</div><div style="font-size:11px;font-weight:700;color:var(--text-secondary)">'+label+'</div></div>'; };
+    out += '<div style="padding:4px 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+
+      tile(s.total,'Recettes','var(--text-primary)')+tile(s.validated,'Validées','#3B6D11')+tile(s.pending,'En attente','#7A5600')+
+      tile(s.supplier,'Vérif. fournisseur','#7A2D8C')+tile(s.published,'Publiées','#185FA5')+tile(s.hidden,'Masquées','#8C1D18')+'</div>';
+    out += '<div style="padding:10px 16px 0;display:flex;gap:8px;flex-wrap:wrap">'+
+      '<button onclick="agmAct(\'new\')" style="flex:1;min-width:140px;padding:12px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#3FAE6A;color:#fff;font-size:14px;font-weight:800;cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000)">+ Ajouter une recette</button>'+
+      '<button onclick="agmAct(\'view\',\'menus\')" style="padding:12px 14px;border-radius:10px;border:2px solid var(--border-strong,#000);background:var(--surface-1);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer">Menus & familles</button>'+
+      '<button onclick="agmAct(\'view\',\'import\')" style="padding:12px 14px;border-radius:10px;border:2px solid var(--border-strong,#000);background:var(--surface-1);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer">Importer Excel</button>'+
+      '<button onclick="agmAct(\'view\',\'history\')" style="padding:12px 14px;border-radius:10px;border:2px solid var(--border-strong,#000);background:var(--surface-1);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer">Historique</button></div>';
+    const sel = 'width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px';
+    out += '<div style="padding:12px 16px 0;display:flex;flex-direction:column;gap:8px">'+
+      '<input id="agm-q" type="search" placeholder="Rechercher une recette…" value="'+esc(a.q)+'" oninput="agmAct(\'q\',this.value)" style="'+sel+';font-size:16px">'+
+      '<div style="display:flex;gap:8px"><select onchange="agmAct(\'fMenu\',this.value)" style="'+sel+'"><option value="">Toutes les cartes</option>'+
+        agDb.menus.map(function(m){ return '<option value="'+m.id+'"'+(a.fMenu===m.id?' selected':'')+'>'+esc(m.nameFr)+'</option>'; }).join('')+'</select>'+
+      '<select onchange="agmAct(\'fStatus\',this.value)" style="'+sel+'">'+
+        [['','Tous les statuts'],['todo','À compléter'],['revalidate','À revalider'],['validated','Validées'],['published','Publiées (visibles)'],['hidden','Masquées'],['draft','Brouillons'],['supplier','Vérif. fournisseur'],['archived','Archivées']].map(function(o){ return '<option value="'+o[0]+'"'+(a.fStatus===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select></div></div>';
+    out += '<div id="agm-list" style="padding:10px 16px 24px">'+agmListHtml(a)+'</div>';
+    return out;
+  }
+  function agmFiltered(a){
+    const q = agNorm(a.q);
+    return agDb.recipes.filter(function(r){
+      if (a.fStatus === 'archived'){ if (r.pub !== 'archived') return false; }
+      else if (r.pub === 'archived') return false;
+      if (a.fMenu && !(r.places||[]).some(function(p){ return p.m === a.fMenu; })) return false;
+      const st = a.fStatus;
+      if (st === 'todo' && r.validation !== 'todo') return false;
+      if (st === 'revalidate' && r.validation !== 'revalidate') return false;
+      if (st === 'validated' && r.validation !== 'validated') return false;
+      if (st === 'published' && !(r.pub === 'published' && r.validation === 'validated')) return false;
+      if (st === 'hidden' && !(r.pub === 'hidden' || (r.pub === 'published' && r.validation !== 'validated'))) return false;
+      if (st === 'draft' && r.pub !== 'draft') return false;
+      if (st === 'supplier' && !Object.keys(r.allergens||{}).some(function(k){ return r.allergens[k] === 'supplier'; })) return false;
+      if (q && agNorm(r.nameFr+' '+(r.nameEn||'')).indexOf(q) < 0 && agScore(a.q, r) === 0) return false;
+      return true;
+    }).sort(function(x,y){ return x.nameFr.localeCompare(y.nameFr); });
+  }
+  function agmListHtml(a){
+    const rs = agmFiltered(a);
+    if (!rs.length) return '<p style="text-align:center;color:var(--text-muted);font-size:14px;margin:18px 0">Aucune recette.</p>';
+    return '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">'+rs.length+' recette'+(rs.length>1?'s':'')+'</div><div style="display:flex;flex-direction:column;gap:8px">'+rs.map(function(r){
+      const paths = (r.places||[]).map(function(p){ const m = agMenu(p.m); return m ? m.nameFr : ''; }).filter(Boolean);
+      return '<div onclick="agmAct(\'edit\',\''+r.id+'\')" style="padding:12px 14px;'+AG_BORDER+';border-radius:12px;background:var(--surface-1);cursor:pointer;box-shadow:2px 2px 0 var(--border-strong,#000)">'+
+        '<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(r.nameFr)+'</div>'+icon('chevronRight',16)+'</div>'+
+        '<div style="font-size:11px;color:var(--text-muted);margin:3px 0 6px">'+esc(paths.join(', ') || 'Aucune carte associée')+'</div>'+
+        '<div style="display:flex;flex-wrap:wrap;gap:4px">'+agmBadges(r)+'</div></div>';
+    }).join('')+'</div>';
+  }
+  function agmEditHtml(a){
+    const d = a.draft; if (!d) return '';
+    const rec = d.id ? agDb.recipes.find(function(r){ return r.id === d.id; }) : null;
+    const inp = 'width:100%;box-sizing:border-box;padding:11px;margin-top:5px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:15px;font-family:inherit';
+    const lab = 'font-size:13px;font-weight:700;color:var(--text-secondary)';
+    const field = function(id, label, val, ph, area){
+      return '<div><label style="'+lab+'">'+label+'</label>'+(area
+        ? '<textarea id="agm-'+id+'" oninput="agmType(\''+id+'\')" placeholder="'+esc(ph||'')+'" style="'+inp+';min-height:70px;resize:vertical">'+esc(val)+'</textarea>'
+        : '<input id="agm-'+id+'" type="text" oninput="agmType(\''+id+'\')" placeholder="'+esc(ph||'')+'" value="'+esc(val)+'" style="'+inp+'">')+'</div>';
+    };
+    let out = agmHeader(rec ? 'Modifier la recette' : 'Nouvelle recette', "agmAct('view','dash')") + agmFlash(a);
+    if (rec){
+      out += '<div style="padding:0 16px 8px;display:flex;flex-wrap:wrap;gap:4px">'+agmBadges(rec)+'</div>';
+      if (rec.pub === 'published' && rec.validation !== 'validated') out += '<div style="margin:0 16px 8px;padding:10px 12px;border-radius:10px;background:#FDECEA;color:#8C1D18;font-size:13px;font-weight:600">Cette recette est masquée côté Guest tant que ses allergènes ne sont pas revalidés.</div>';
+    }
+    out += '<div style="padding:4px 16px 16px;display:flex;flex-direction:column;gap:14px">';
+    out += field('nameFr','Nom (français) *', d.nameFr, 'Ex : Cocotte de coquillettes');
+    out += field('nameEn','Nom (anglais)', d.nameEn, 'Traduction à saisir plus tard');
+    out += field('descFr','Description (français)', d.descFr, 'Optionnel', true);
+    out += field('descEn','Description (anglais)', d.descEn, 'Optionnel', true);
+    out += '<div><label style="'+lab+'">Allergènes</label><div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">'+AG_ALLERGENS.map(function(al){
+      const lvl = d.allergens[al.k];
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1.5px solid '+(lvl?'#B3261E':'var(--border)')+';border-radius:8px;background:'+(lvl?'#FDECEA':'var(--surface-1)')+'">'+
+        '<label style="display:flex;align-items:center;gap:8px;flex:1;font-size:14px;font-weight:700;color:var(--text-primary);cursor:pointer"><input type="checkbox" '+(lvl?'checked':'')+' onchange="agmAct(\'tgl\',\''+al.k+'\')" style="width:20px;height:20px">'+esc(al.k)+'</label>'+
+        (lvl ? '<select onchange="agmAct(\'lvl\',\''+al.k+'\',this.value)" style="padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12px;max-width:150px">'+Object.keys(AG_LEVELS).map(function(k){ return '<option value="'+k+'"'+(lvl===k?' selected':'')+'>'+esc(AG_LEVELS[k])+'</option>'; }).join('')+'</select>' : '')+
+      '</div>';
+    }).join('')+'</div>'+
+      '<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;font-weight:600;color:var(--text-primary);cursor:pointer"><input type="checkbox" '+(d.noAllergen?'checked':'')+' onchange="agmAct(\'noAll\')" style="width:20px;height:20px">Aucun des 14 allergènes (à cocher seulement si c\'est vérifié)</label></div>';
+    out += '<div><label style="'+lab+'">Cartes et menus (avec famille)</label><div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">'+agDb.menus.map(function(m){
+      const pl = d.places.find(function(p){ return p.m === m.id; });
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface-1)">'+
+        '<label style="display:flex;align-items:center;gap:8px;flex:1;font-size:13px;font-weight:700;color:var(--text-primary);cursor:pointer"><input type="checkbox" '+(pl?'checked':'')+' onchange="agmAct(\'pl\',\''+m.id+'\')" style="width:20px;height:20px">'+esc(m.nameFr)+'</label>'+
+        (pl ? '<select onchange="agmAct(\'plf\',\''+m.id+'\',this.value)" style="padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12px;max-width:150px">'+m.families.map(function(f){ return '<option value="'+f.id+'"'+(pl.f===f.id?' selected':'')+'>'+esc(f.nameFr)+'</option>'; }).join('')+'</select>' : '')+
+      '</div>';
+    }).join('')+'</div></div>';
+    out += field('note','Commentaire interne (jamais visible côté Guest)', d.note, 'Ex : à revérifier avec le fournisseur', true);
+    out += '<button onclick="agmAct(\'save\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:var(--surface-1);color:var(--text-primary);font-size:14px;font-weight:800;cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000)">Enregistrer</button>';
+    if (rec){
+      out += '<div style="display:flex;flex-direction:column;gap:8px">';
+      if (rec.validation !== 'validated') out += '<button onclick="agmAct(\'validate\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#3FAE6A;color:#fff;font-size:14px;font-weight:800;cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000)">Valider les allergènes</button>';
+      if (rec.pub !== 'published' && rec.pub !== 'archived') out += '<button onclick="agmAct(\'publish\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#185FA5;color:#fff;font-size:14px;font-weight:800;cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000)">Publier (visible côté Guest)</button>';
+      if (rec.pub === 'published') out += '<button onclick="agmAct(\'hide\')" style="width:100%;padding:12px;border-radius:10px;border:2px solid var(--border-strong,#000);background:var(--surface-1);color:var(--text-primary);font-size:14px;font-weight:700;cursor:pointer">Masquer</button>';
+      if (rec.pub !== 'archived') out += '<button onclick="agmAct(\'archive\')" style="width:100%;padding:12px;border-radius:10px;border:2px solid #B3261E;background:var(--surface-1);color:#B3261E;font-size:14px;font-weight:700;cursor:pointer">Archiver</button>';
+      else out += '<button onclick="agmAct(\'restore\')" style="width:100%;padding:12px;border-radius:10px;border:2px solid var(--border-strong,#000);background:var(--surface-1);color:var(--text-primary);font-size:14px;font-weight:700;cursor:pointer">Restaurer (en masquée)</button>';
+      out += '</div>';
+      if (rec.validatedAt) out += '<div style="font-size:12px;color:var(--text-muted)">Dernière validation : '+esc(rec.validatedBy||'')+' · '+esc(rec.validatedAt)+'</div>';
+    }
+    out += '</div>';
+    return out;
+  }
+  function agmMenusHtml(a){
+    const inp = 'padding:9px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px;box-sizing:border-box;min-width:0';
+    let out = agmHeader('Menus & familles', "agmAct('view','dash')") + agmFlash(a);
+    out += '<div style="padding:4px 16px 24px;display:flex;flex-direction:column;gap:12px">';
+    agDb.menus.forEach(function(m){
+      out += '<div style="padding:12px;'+AG_BORDER+';border-radius:12px;background:var(--surface-1)">'+
+        '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><input type="text" value="'+esc(m.nameFr)+'" onchange="agmAct(\'renMenu\',\''+m.id+'\',\'nameFr\',this.value)" style="'+inp+';flex:1;font-weight:700">'+
+        '<input type="text" value="'+esc(m.nameEn||'')+'" placeholder="EN" onchange="agmAct(\'renMenu\',\''+m.id+'\',\'nameEn\',this.value)" style="'+inp+';width:90px">'+
+        '<span onclick="agmAct(\'delMenu\',\''+m.id+'\')" style="cursor:pointer;color:#B3261E;font-size:20px;padding:0 6px">×</span></div>'+
+        '<div style="font-size:11px;font-weight:800;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px">'+(m.type==='carte'?'Carte':'Menu groupe')+'</div>'+
+        m.families.map(function(f){
+          return '<div style="display:flex;gap:6px;align-items:center;margin-top:5px"><input type="text" value="'+esc(f.nameFr)+'" onchange="agmAct(\'renFam\',\''+m.id+'\',\''+f.id+'\',this.value,\'nameFr\')" style="'+inp+';flex:1;font-size:13px">'+
+            '<input type="text" value="'+esc(f.nameEn||'')+'" placeholder="EN" onchange="agmAct(\'renFam\',\''+m.id+'\',\''+f.id+'\',this.value,\'nameEn\')" style="'+inp+';width:90px;font-size:13px">'+
+            '<span onclick="agmAct(\'delFam\',\''+m.id+'\',\''+f.id+'\')" style="cursor:pointer;color:#B3261E;font-size:18px;padding:0 6px">×</span></div>';
+        }).join('')+
+        '<div style="margin-top:8px"><span onclick="agmAct(\'addFam\',\''+m.id+'\')" style="font-size:13px;font-weight:700;color:var(--text-accent,#185FA5);cursor:pointer">+ Ajouter une famille</span></div></div>';
+    });
+    out += '<div style="display:flex;gap:8px"><button onclick="agmAct(\'addMenu\',\'carte\')" style="flex:1;padding:12px;border-radius:10px;border:2px solid var(--border-strong,#000);background:var(--surface-1);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer">+ Nouvelle carte</button>'+
+      '<button onclick="agmAct(\'addMenu\',\'groupe\')" style="flex:1;padding:12px;border-radius:10px;border:2px solid var(--border-strong,#000);background:var(--surface-1);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer">+ Nouveau menu groupe</button></div>';
+    out += '</div>';
+    return out;
+  }
+  function agmHistoryHtml(a){
+    let out = agmHeader('Historique des modifications', "agmAct('view','dash')");
+    const h = a.history || [];
+    out += '<div style="padding:4px 16px 24px;display:flex;flex-direction:column;gap:8px">';
+    if (!h.length) out += '<p style="text-align:center;color:var(--text-muted);font-size:14px;margin:18px 0">Aucune modification enregistrée.</p>';
+    h.slice(0,200).forEach(function(e){
+      out += '<div style="padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--surface-1)">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text-primary)">'+esc(e.recipeName||'')+' <span style="font-weight:600;color:var(--text-muted)">· '+esc(e.action||'')+'</span></div>'+
+        (e.detail ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:3px;line-height:1.4">'+esc(e.detail)+'</div>' : '')+
+        '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">'+esc(e.user||'')+' · '+esc(e.when||'')+'</div></div>';
+    });
+    out += '</div>';
+    return out;
+  }
+
+  function agmAuthHtml(a){
+    let email = ''; try { email = localStorage.getItem('agAdminEmail') || ''; } catch(e){}
+    const inp = 'width:100%;box-sizing:border-box;padding:12px;margin-top:5px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:16px';
+    return agmHeader('Connexion sécurisée', "appAction('goAdminMenu')") + agmFlash(a) +
+      '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:12px">'+
+      '<p style="font-size:13px;color:var(--text-secondary);margin:0;line-height:1.5">Pour modifier les allergènes, connecte-toi avec ton compte administrateur. Cette connexion est demandée une seule fois sur cet appareil.</p>'+
+      '<div><label style="font-size:13px;font-weight:700;color:var(--text-secondary)">Email</label><input id="agm-auth-email" type="email" autocomplete="username" value="'+esc(email)+'" style="'+inp+'"></div>'+
+      '<div><label style="font-size:13px;font-weight:700;color:var(--text-secondary)">Mot de passe</label><input id="agm-auth-pw" type="password" autocomplete="current-password" style="'+inp+'"></div>'+
+      '<button onclick="agmAct(\'signIn\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#1A1A1A;color:#fff;font-size:14px;font-weight:800;cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000)">Se connecter</button></div>';
+  }
+  function agmUser(){ return state.name || 'Admin'; }
+  function agmSummaryAl(al, no){ const k = Object.keys(al||{}); return k.length ? k.join(', ') : (no ? 'aucun (vérifié)' : 'aucun renseigné'); }
+  window.agmType = function(){ agmSync(); agmPersist(); };
+
+  async function agmApplyDraft(){
+    // Enregistre le brouillon dans la base. Retourne { rec, changedAl } ou null si invalide.
+    agmSync();
+    const a = state.agm, d = a.draft;
+    if (!d.nameFr.trim()){ a.err = 'Le nom français est obligatoire.'; a.msg = ''; agmRender(); return null; }
+    let out = { rec:null, changedAl:false, created:false, before:'' };
+    await agMutate(function(db){
+      let r = d.id ? db.recipes.find(function(x){ return x.id === d.id; }) : null;
+      if (!r){
+        r = { id:'r-'+Date.now().toString(36)+Math.floor(Math.random()*1000), validation:'todo', pub:'draft', validatedBy:'', validatedAt:'' };
+        db.recipes.push(r); out.created = true; d.id = r.id;
+      }
+      const oldKeys = Object.keys(r.allergens||{}).sort().join('|') + '#' + (r.noAllergen ? 1 : 0);
+      out.before = agmSummaryAl(r.allergens, r.noAllergen);
+      r.nameFr = d.nameFr.trim(); r.nameEn = d.nameEn.trim(); r.descFr = d.descFr.trim(); r.descEn = d.descEn.trim(); r.note = d.note.trim();
+      r.allergens = JSON.parse(JSON.stringify(d.allergens)); r.noAllergen = !!d.noAllergen && Object.keys(d.allergens).length === 0;
+      r.places = JSON.parse(JSON.stringify(d.places));
+      const newKeys = Object.keys(r.allergens).sort().join('|') + '#' + (r.noAllergen ? 1 : 0);
+      out.changedAl = oldKeys !== newKeys && !out.created;
+      if (out.changedAl && r.validation === 'validated') r.validation = 'revalidate';
+      out.rec = JSON.parse(JSON.stringify(r));
+    });
+    return out;
+  }
+  async function agmLogRec(rec, action, detail){
+    await agLog([{ ts:new Date().toISOString(), when:nowLabel(), user:agmUser(), recipeId:rec.id, recipeName:rec.nameFr, action:action, detail:detail||'' }]);
+  }
+  async function agmReloadAfter(msg){
+    const a = state.agm;
+    a.err = ''; a.msg = msg || '';
+    const rec = agDb.recipes.find(function(r){ return r.id === a.draft.id; });
+    if (rec) a.draft = agmDraftFrom(rec);
+    agmRender();
+  }
+
+  window.agmAct = async function(type, p1, p2, p3, p4){
+    if (!state.adminUnlocked) return;
+    const a = state.agm; if (!a) return;
+    try {
+      if (type === 'q'){ a.q = p1; const l = document.getElementById('agm-list'); if (l) l.innerHTML = agmListHtml(a); agmPersist(); return; }
+      if (type === 'fMenu'){ a.fMenu = p1; a.msg = ''; }
+      else if (type === 'fStatus'){ a.fStatus = p1; a.msg = ''; }
+      else if (type === 'view'){
+        agmSync(); a.view = p1; a.msg = ''; a.err = '';
+        if (p1 === 'history') a.history = await agHistoryLoad();
+        if (p1 === 'dash' || p1 === 'menus') agDb = await agLoad();
+        if (p1 === 'import'){ a.imp = null; agImpPlanObj = null; }
+        try { window.scrollTo(0,0); } catch(e){}
+      }
+      else if (type === 'signIn'){
+        const em = (document.getElementById('agm-auth-email')||{}).value || ''; const pw = (document.getElementById('agm-auth-pw')||{}).value || '';
+        if (!em.trim() || !pw){ a.err = 'Renseigne l\'email et le mot de passe.'; a.msg = ''; agmRender(); return; }
+        try { localStorage.setItem('agAdminEmail', em.trim()); } catch(e){}
+        try {
+          await window.agAuth.signIn(em.trim(), pw);
+          a.view = 'dash'; a.err = ''; a.msg = 'Connecté.';
+        } catch(e){ a.err = 'Connexion refusée : email ou mot de passe incorrect.'; a.msg = ''; }
+      }
+      else if (type === 'impFiles'){
+        const inp = document.getElementById('agm-imp-file'); const files = inp ? Array.prototype.slice.call(inp.files) : [];
+        if (!files.length) return;
+        a.msg = ''; a.err = ''; a.imp = { files:files.map(function(f){ return f.name; }), markValidated:true, replace:{}, busy:true }; agImpPlanObj = null; agmRender();
+        try {
+          const XLSX = await agLoadXlsx(); const sheets = [];
+          for (let i=0;i<files.length;i++){
+            const wb = XLSX.read(await files[i].arrayBuffer(), { type:'array' });
+            wb.SheetNames.forEach(function(n){ sheets.push(agImpParseSheet(n, XLSX.utils.sheet_to_json(wb.Sheets[n], { header:1, defval:null }))); });
+          }
+          agDb = await agLoad();
+          agImpPlanObj = agImpPlan(agDb, sheets, { markValidated:true });
+          a.imp.busy = false;
+        } catch(e){ a.imp = null; a.err = 'Lecture impossible (fichier illisible ou lecteur Excel non chargé : vérifie ta connexion).'; }
+      }
+      else if (type === 'impValid'){ if (a.imp) a.imp.markValidated = !a.imp.markValidated; }
+      else if (type === 'impReplace'){ if (a.imp){ a.imp.replace = a.imp.replace || {}; a.imp.replace[p1] = !a.imp.replace[p1]; } }
+      else if (type === 'impApply'){
+        if (!agImpPlanObj || !a.imp) return;
+        if (!confirm('Confirmer l\'import ? Les nouvelles recettes seront ajoutées à la base.')) return;
+        const plan = agImpPlanObj; plan.opts.markValidated = a.imp.markValidated;
+        let logs = [];
+        await agMutate(function(db){ logs = agImpApply(db, plan, a.imp.replace, agmUser()); });
+        await agLog(logs.map(function(l){ return Object.assign({ ts:new Date().toISOString(), when:nowLabel(), user:agmUser() }, l); }));
+        a.msg = 'Import terminé : '+plan.sum.newRec+' recette(s) créée(s), '+plan.sum.newPlaces+' placement(s), '+Object.keys(a.imp.replace||{}).filter(function(k){ return a.imp.replace[k]; }).length+' remplacement(s).';
+        agImpPlanObj = null; a.imp = null; a.view = 'dash'; try { window.scrollTo(0,0); } catch(e){}
+      }
+      else if (type === 'new'){ a.draft = agmBlankDraft(); a.view = 'edit'; a.msg = ''; a.err = ''; try { window.scrollTo(0,0); } catch(e){} }
+      else if (type === 'edit'){
+        agDb = await agLoad();
+        const r = agDb.recipes.find(function(x){ return x.id === p1; });
+        if (r){ a.draft = agmDraftFrom(r); a.view = 'edit'; a.msg = ''; a.err = ''; try { window.scrollTo(0,0); } catch(e){} }
+      }
+      else if (type === 'tgl'){ agmSync(); if (a.draft.allergens[p1]) delete a.draft.allergens[p1]; else { a.draft.allergens[p1] = 'confirmed'; a.draft.noAllergen = false; } }
+      else if (type === 'lvl'){ agmSync(); a.draft.allergens[p1] = p2; }
+      else if (type === 'noAll'){ agmSync(); a.draft.noAllergen = !a.draft.noAllergen; if (a.draft.noAllergen) a.draft.allergens = {}; }
+      else if (type === 'pl'){ agmSync(); const i = a.draft.places.findIndex(function(x){ return x.m === p1; }); if (i >= 0) a.draft.places.splice(i,1); else { const m = agMenu(p1); a.draft.places.push({ m:p1, f:m.families[0] ? m.families[0].id : '' }); } }
+      else if (type === 'plf'){ agmSync(); const x = a.draft.places.find(function(q){ return q.m === p1; }); if (x) x.f = p2; }
+      else if (type === 'save'){
+        const res = await agmApplyDraft(); if (!res) return;
+        await agmLogRec(res.rec, res.created ? 'Création' : 'Modification', res.changedAl ? 'Allergènes : '+res.before+' → '+agmSummaryAl(res.rec.allergens, res.rec.noAllergen)+(res.rec.validation==='revalidate' ? ' (masquée jusqu\'à revalidation)' : '') : '');
+        await agmReloadAfter(res.changedAl && res.rec.validation === 'revalidate' ? 'Enregistré. Les allergènes ont changé : la recette est masquée côté Guest jusqu\'à revalidation.' : 'Enregistré.');
+        return;
+      }
+      else if (type === 'validate'){
+        const res = await agmApplyDraft(); if (!res) return;
+        if (!Object.keys(res.rec.allergens).length && !res.rec.noAllergen){
+          a.err = 'Coche au moins un allergène, ou « Aucun des 14 allergènes » si c\'est vérifié, avant de valider.'; a.msg = ''; agmRender(); return;
+        }
+        await agMutate(function(db){ const r = db.recipes.find(function(x){ return x.id === res.rec.id; }); r.validation = 'validated'; r.validatedBy = agmUser(); r.validatedAt = nowLabel(); });
+        await agmLogRec(res.rec, 'Validation', 'Allergènes validés : '+agmSummaryAl(res.rec.allergens, res.rec.noAllergen));
+        const published = res.rec.pub === 'published';
+        await agmReloadAfter(published ? 'Validée. La recette est de nouveau visible côté Guest.' : 'Validée. Elle reste invisible tant que tu ne la publies pas.');
+        return;
+      }
+      else if (type === 'publish'){
+        const res = await agmApplyDraft(); if (!res) return;
+        const cur = agDb.recipes.find(function(x){ return x.id === res.rec.id; });
+        if (cur.validation !== 'validated'){ a.err = 'Valide d\'abord les allergènes : une recette non validée ne peut pas être publiée.'; a.msg = ''; agmRender(); return; }
+        await agMutate(function(db){ db.recipes.find(function(x){ return x.id === res.rec.id; }).pub = 'published'; });
+        await agmLogRec(res.rec, 'Publication', 'Visible côté Guest');
+        await agmReloadAfter('Publiée : visible côté Guest.');
+        return;
+      }
+      else if (type === 'hide' || type === 'archive' || type === 'restore'){
+        if (type === 'archive' && !confirm('Archiver cette recette ? Elle ne sera plus visible côté Guest.')) return;
+        const res = await agmApplyDraft(); if (!res) return;
+        const target = type === 'archive' ? 'archived' : 'hidden';
+        await agMutate(function(db){ db.recipes.find(function(x){ return x.id === res.rec.id; }).pub = target; });
+        await agmLogRec(res.rec, type === 'hide' ? 'Masquage' : (type === 'archive' ? 'Archivage' : 'Restauration'), '');
+        await agmReloadAfter(type === 'hide' ? 'Masquée côté Guest.' : (type === 'archive' ? 'Archivée.' : 'Restaurée (masquée).'));
+        return;
+      }
+      else if (type === 'renMenu'){
+        await agMutate(function(db){ const m = db.menus.find(function(x){ return x.id === p1; }); if (m) m[p2] = String(p3||'').trim() || (p2 === 'nameFr' ? m.nameFr : ''); });
+        a.msg = 'Enregistré.'; a.err = '';
+      }
+      else if (type === 'renFam'){
+        await agMutate(function(db){ const m = db.menus.find(function(x){ return x.id === p1; }); const f = m && m.families.find(function(x){ return x.id === p2; }); if (f) f[p4] = String(p3||'').trim() || (p4 === 'nameFr' ? f.nameFr : ''); });
+        a.msg = 'Enregistré.'; a.err = '';
+      }
+      else if (type === 'addFam'){
+        const n = (prompt('Nom de la nouvelle famille ?') || '').trim(); if (!n) return;
+        await agMutate(function(db){ const m = db.menus.find(function(x){ return x.id === p1; }); if (m) m.families.push({ id:'f-'+Date.now().toString(36), nameFr:n, nameEn:'' }); });
+        a.msg = 'Famille ajoutée.'; a.err = '';
+      }
+      else if (type === 'delFam'){
+        const used = agDb.recipes.some(function(r){ return (r.places||[]).some(function(x){ return x.m === p1 && x.f === p2; }); });
+        if (used){ a.err = 'Cette famille contient encore des recettes : déplace-les d\'abord.'; a.msg = ''; agmRender(); return; }
+        if (!confirm('Retirer cette famille ?')) return;
+        await agMutate(function(db){ const m = db.menus.find(function(x){ return x.id === p1; }); if (m) m.families = m.families.filter(function(f){ return f.id !== p2; }); });
+        a.msg = 'Famille retirée.'; a.err = '';
+      }
+      else if (type === 'addMenu'){
+        const n = (prompt(p1 === 'carte' ? 'Nom de la nouvelle carte ?' : 'Nom du nouveau menu groupe ?') || '').trim(); if (!n) return;
+        const id = 'm-'+Date.now().toString(36);
+        await agMutate(function(db){ db.menus.push({ id:id, type:p1, nameFr:n, nameEn:'', families:[ { id:id+'-1', nameFr:'Entrées', nameEn:'Starters' }, { id:id+'-2', nameFr:'Plats', nameEn:'' }, { id:id+'-3', nameFr:'Desserts', nameEn:'Desserts' } ] }); });
+        a.msg = 'Ajouté.'; a.err = '';
+      }
+      else if (type === 'delMenu'){
+        const used = agDb.recipes.some(function(r){ return (r.places||[]).some(function(x){ return x.m === p1; }); });
+        if (used){ a.err = 'Ce menu contient encore des recettes : retire-les du menu d\'abord (fiche recette).'; a.msg = ''; agmRender(); return; }
+        if (!confirm('Retirer ce menu ?')) return;
+        await agMutate(function(db){ db.menus = db.menus.filter(function(m){ return m.id !== p1; }); });
+        a.msg = 'Menu retiré.'; a.err = '';
+      }
+      agmRender();
+    } catch(e){
+      a.err = (window.agAuth ? 'Enregistrement refusé : ta connexion sécurisée a peut-être expiré. Reconnecte-toi (retour au menu Admin puis « Gérer les allergènes »).' : 'Erreur d\'enregistrement. Vérifie ta connexion et réessaie.'); a.msg = '';
+      agmRender();
+    }
+  };
+
+  function screenAgManager(){
+    return '<div id="agm-root">'+agmHtml()+'</div>';
+  }
   function screenAllergenesReadMamaGang(){
-    const menu = state.allergenesMenu || DEFAULT_ALLERGENES_MENU;
-    let out = '<div style="padding:16px 16px 0">'+
-      '<div onclick="appAction(\'goHome\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;font-size:14px;width:fit-content">'+icon('back',18)+'<span>Retour</span></div>'+
-    '</div>';
-    out += '<div style="padding:12px 16px 8px;text-align:center">'+
-      '<div class="copilote-script" style="font-size:34px">Copilote</div>'+
-      '<img src="'+LOGO_URI+'" alt="Mama Shelter Toulouse" style="width:70px;height:70px;object-fit:contain;display:block;margin:6px auto 0">'+
-      '<h1 class="mama-title" style="font-size:18px;margin:14px 0 2px;color:var(--text-primary)">Allergènes</h1>'+
-      '<p style="color:var(--text-secondary);font-size:13px;margin:0">La carte et les allergènes présents dans nos plats</p>'+
-    '</div>';
-    out += buildAllergenesSearchAndListHtml(menu);
-    out += '<div style="margin:8px 16px 24px;padding:14px;border-radius:10px;background:var(--surface-0);border:1.5px solid var(--border)">'+
-      '<p style="color:var(--text-secondary);font-size:12px;margin:0 0 8px;line-height:1.5">Liste communiquée à titre indicatif. Malgré toutes nos précautions, un risque de contamination croisée entre les plats ne peut jamais être totalement exclu.</p>'+
-      '<p style="color:var(--text-secondary);font-size:12px;margin:0;line-height:1.5;font-weight:600">En cas d\'allergie signalée par un guest, préviens un manager avant de passer commande.</p>'+
-    '</div>';
+    let out = '<div style="padding:16px 16px 0"><div onclick="appAction(\'goHome\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;font-size:14px;width:fit-content">'+icon('back',18)+'<span>Retour</span></div></div>';
+    out += '<div style="padding:10px 16px 6px;text-align:center">'+
+      '<div class="copilote-script" style="font-size:30px">Copilote</div>'+
+      '<h1 class="mama-title" style="font-size:18px;margin:6px 0 2px;color:var(--text-primary)">'+esc(agT('title'))+'</h1>'+
+      '<p style="color:var(--text-secondary);font-size:13px;margin:0">'+esc(agT('sub'))+'</p></div>';
+    out += '<div id="ag-root">'+agGuestHtml()+'</div>';
     out += bottomNav('home');
     return out;
   }
-
   async function renderPublicAllergenesPage(){
     const root = document.getElementById('app');
-    const menu = await getAllergenesMenu();
     let out = '<div style="padding:28px 16px 8px;text-align:center">'+
       '<div class="copilote-script" style="font-size:34px">Copilote</div>'+
       '<img src="'+LOGO_URI+'" alt="Mama Shelter Toulouse" style="width:70px;height:70px;object-fit:contain;display:block;margin:6px auto 0">'+
-      '<h1 class="mama-title" style="font-size:18px;margin:14px 0 2px;color:var(--text-primary)">Allergènes</h1>'+
-      '<p style="color:var(--text-secondary);font-size:13px;margin:0">La carte et les allergènes présents dans nos plats</p>'+
-    '</div>';
-    out += buildAllergenesSearchAndListHtml(menu);
-    out += '<div style="margin:8px 16px 24px;padding:14px;border-radius:10px;background:var(--surface-0);border:1.5px solid var(--border)">'+
-      '<p style="color:var(--text-secondary);font-size:12px;margin:0 0 8px;line-height:1.5">Liste communiquée à titre indicatif. Malgré toutes nos précautions, un risque de contamination croisée entre les plats ne peut jamais être totalement exclu.</p>'+
-      '<p style="color:var(--text-secondary);font-size:12px;margin:0;line-height:1.5;font-weight:600">En cas d\'allergie, merci de te signaler auprès de notre équipe avant de passer commande.</p>'+
-    '</div>';
-    root.innerHTML = out;
+      '<h1 class="mama-title" style="font-size:18px;margin:14px 0 2px;color:var(--text-primary)">'+esc(agT('title'))+'</h1>'+
+      '<p style="color:var(--text-secondary);font-size:13px;margin:0">'+esc(agT('sub'))+'</p></div>';
+    root.innerHTML = out + '<div id="ag-root"><div style="padding:24px;text-align:center;color:var(--text-muted)">'+esc(agT('loading'))+'</div></div>';
+    try {
+      agDb = await agLoad();
+      agLastJson = JSON.stringify(agDb);
+      agRerender();
+    } catch(e){
+      const el = document.getElementById('ag-root');
+      if (el) el.innerHTML = '<div style="margin:16px;padding:16px;border-radius:12px;background:#FDECEA;color:#8C1D18;font-size:14px;font-weight:600;text-align:center">'+esc(agT('error'))+'</div>';
+    }
   }
-  window.filterPublicAllergenesMenu = function(query){
-    const q = (query||'').trim().toLowerCase();
-    const cats = document.querySelectorAll('.pub-allergene-cat');
-    const groups = document.querySelectorAll('.pub-allergene-group');
-    let anyVisible = false;
-    cats.forEach(function(catEl){
-      const itemEls = catEl.querySelectorAll('.pub-allergene-item');
-      let catHasVisible = false;
-      itemEls.forEach(function(itemEl){
-        const match = !q || (itemEl.getAttribute('data-name')||'').indexOf(q) >= 0;
-        itemEl.style.display = match ? '' : 'none';
-        if (match) catHasVisible = true;
-      });
-      if (!q){
-        catEl.style.display = '';
-        catEl.open = false;
-        anyVisible = true;
-      } else {
-        catEl.style.display = catHasVisible ? '' : 'none';
-        catEl.open = catHasVisible;
-        if (catHasVisible) anyVisible = true;
-      }
-    });
-    groups.forEach(function(groupEl){
-      if (!q){ groupEl.style.display = ''; return; }
-      const visibleCount = Array.prototype.filter.call(groupEl.querySelectorAll('.pub-allergene-item'), function(el){ return el.style.display !== 'none'; }).length;
-      groupEl.style.display = visibleCount > 0 ? '' : 'none';
-    });
-    const emptyMsg = document.getElementById('pub-allergenes-empty');
-    if (emptyMsg) emptyMsg.style.display = (!q || anyVisible) ? 'none' : 'block';
-  };
 
   const publicUrlParams = new URLSearchParams(window.location.search);
   const isPublicAllergenesMode = publicUrlParams.has('allergenes') || window.location.hash.replace('#','').toLowerCase() === 'allergenes';
