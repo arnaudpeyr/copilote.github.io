@@ -3957,10 +3957,8 @@ window.agAuth = {
       render();
     }
     else if (action === 'deleteNestedSublieu'){
-      const submenu = findSublieu(payload.catId, payload.subId);
-      submenu.sublieux = submenu.sublieux.filter(s=>s.id!==payload.nestedId);
-      await saveStructure(state.structure);
-      render();
+      // Suppression d'un sous-lieu désactivée : seuls les éléments d'une liste sont supprimables.
+      return;
     }
     else if (action === 'addFridge'){
       const input = document.getElementById('new-fridge-'+payload.catId+'-'+payload.subId);
@@ -4373,11 +4371,8 @@ window.agAuth = {
       render();
     }
     else if (action === 'deleteSublieu'){
-      if (!window.confirm('Supprimer ce sous-lieu et toutes ses tâches ?')) return;
-      const cat = findCategory(payload.catId);
-      cat.sublieux = cat.sublieux.filter(s=>s.id!==payload.subId);
-      await saveStructure(state.structure);
-      render();
+      // Suppression d'un sous-lieu désactivée : seuls les éléments d'une liste sont supprimables.
+      return;
     }
     else if (action === 'addTask'){
       const labelInput = document.getElementById('new-task-label-'+payload.catId+'-'+payload.subId);
@@ -6721,7 +6716,6 @@ window.agAuth = {
           out += '<div onclick="'+subClickAction+'" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer">'+
             '<div style="flex:1;font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(sub.name)+
             '</div>'+
-            (sub.type === 'recettes' ? '' : '<div onclick="event.stopPropagation();appAction(\'deleteSublieu\', {catId:\''+cat.id+'\', subId:\''+sub.id+'\'})" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',14)+'</div>')+
             (sub.type === 'requisition' || sub.type === 'recettes' ? icon('chevronRight',16) : '<div style="color:var(--text-muted);transform:rotate('+(subOpen?'180':'0')+'deg)">'+icon('chevronDown',16)+'</div>')+
           '</div>';
 
@@ -6754,7 +6748,6 @@ window.agAuth = {
                 out += '<div style="border:1px solid var(--border-strong,var(--border));border-radius:8px;background:var(--surface-1);overflow:hidden;margin-bottom:6px">';
                 out += '<div onclick="'+nestedClickAction+'" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer">'+
                   '<span style="flex:1;font-size:13px;font-weight:600;color:var(--text-primary)">'+esc(nested.name)+'</span>'+
-                  '<span onclick="event.stopPropagation();appAction(\'deleteNestedSublieu\', {catId:\''+cat.id+'\', subId:\''+sub.id+'\', nestedId:\''+nested.id+'\'})" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',13)+'</span>'+
                   (nested.type === 'requisition' ? icon('chevronRight',14) : '<span style="color:var(--text-muted);transform:rotate('+(nestedOpen?'180':'0')+'deg)">'+icon('chevronDown',14)+'</span>')+
                 '</div>';
                 if (nestedOpen){
