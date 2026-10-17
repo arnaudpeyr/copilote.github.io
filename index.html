@@ -930,7 +930,23 @@ window.agAuth = {
           ]}
       ]},
       { id:'fermeture', name:'Fermeture', icon:'door', sublieux: [
-          { id:'fermeture-rdc', name:'RDC', icon:'door', type:'checklist', tasks:[
+          { id:'fermeture-rdc-am', name:'RDC AM', icon:'door', type:'checklist', floor:'rdc', shift:'AM', tasks:[
+              {id:'frdcam-1', label:'Les consoles sont propres et remplies (duralex, rouleau TPE, rouleau imprimante, agrafeuses, spray et lavettes)', obligatoire:true},
+              {id:'frdcam-2', label:'Les serviettes sont rangées dans le bon sens et proprement', obligatoire:true},
+              {id:'frdcam-3', label:'Les couverts et assiettes de partage ont été vinaigrés et remis en console', obligatoire:true},
+              {id:'frdcam-4', label:'Les poubelles sont vidées', obligatoire:true},
+              {id:'frdcam-5', label:'La salle a été remise au propre (coussins, tables dressées et propres)', obligatoire:true},
+              {id:'frdcam-6', label:'Les arrières sont propres, la plonge vidée et les vides consignés', obligatoire:true},
+              {id:'frdcam-7', label:'La machine à café a été nettoyée', obligatoire:true},
+              {id:'frdcam-8', label:'Le sol a été fait', obligatoire:true},
+              {id:'frdcam-9', label:'Les étages, salle de pause et quai ont été vidés', obligatoire:true},
+              {id:'frdcam-10', label:'L\'ETC est vérifié, les tables soldées (ou transférées sur un serveur du soir)', obligatoire:true},
+              {id:'frdcam-11', label:'Le Duty a été rédigé et envoyé', obligatoire:true},
+              {id:'frdcam-12', label:'Le rapport a été rempli avec la bonne date', obligatoire:true},
+              {id:'frdcam-13', label:'Les infos ont été données au manager du soir', obligatoire:true},
+              {id:'frdcam-14', label:'Les FF du matin ont été déposées à l\'open space', obligatoire:true}
+          ]},
+          { id:'fermeture-rdc', name:'RDC PM', icon:'door', type:'checklist', floor:'rdc', shift:'PM', tasks:[
               {id:'frdc-1', label:'La bâche de la terrasse est remontée', obligatoire:true},
               {id:'frdc-2', label:'L\'hiver, la cheminée est éteinte', obligatoire:true},
               {id:'frdc-3', label:'L\'été, le système de brumisation est éteint', obligatoire:true},
@@ -941,7 +957,7 @@ window.agAuth = {
               {id:'frdc-8', label:'Les tickets Tables Ouvertes, Corrections et... sont sortis, signés et remis à la Night', obligatoire:true},
               {id:'frdc-9', label:'Les FF des Events sont descendues sur leurs bureaux', obligatoire:true}
           ]},
-          { id:'fermeture-roof', name:'Roof', icon:'door', type:'checklist', tasks:[
+          { id:'fermeture-roof', name:'Roof', icon:'door', type:'checklist', floor:'roof', tasks:[
               {id:'froof-1', label:'La salle est en état : plus rien ne traîne', obligatoire:true, group:'Salle'},
               {id:'froof-2', label:'La machine à glaces est éteinte et nettoyée', obligatoire:true, group:'Salle'},
               {id:'froof-3', label:'Les QR codes et les pots de fleurs sont rangés', obligatoire:true, group:'Salle'},
@@ -1136,6 +1152,7 @@ window.agAuth = {
     tracabilite: [],
     tracabiliteSaved: false,
     historiqueTracaId: null,
+    fermetureFloor: null,
     copyFeedback: false,
     perteSaved: false,
     requisitionFridgeIndex: 0,
@@ -1219,7 +1236,7 @@ window.agAuth = {
     return d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
   }
 
-  const CURRENT_MIGRATION_VERSION = 12;
+  const CURRENT_MIGRATION_VERSION = 13;
   async function getMigrationVersion(){
     try {
       const res = await window.storage.get('migrationVersion', true);
@@ -1352,6 +1369,22 @@ window.agAuth = {
     }
     if (arrieres && arrieres.name !== 'La Salle'){
       arrieres.name = 'La Salle';
+      await window.storage.set('structure', JSON.stringify(structure), true);
+    }
+    // Migration : fermeture RDC en deux temps (AM / PM). La liste existante devient « RDC PM »,
+    // la nouvelle liste « RDC AM » est ajoutée une seule fois.
+    const fermCat = structure.categories.find(c=>c.id==='fermeture');
+    if (fermCat && !structure.fermetureAmSeeded){
+      const rdcPm = fermCat.sublieux.find(s=>s.id==='fermeture-rdc');
+      const roofSub = fermCat.sublieux.find(s=>s.id==='fermeture-roof');
+      if (rdcPm){ rdcPm.name = 'RDC PM'; rdcPm.floor = 'rdc'; rdcPm.shift = 'PM'; }
+      if (roofSub){ roofSub.floor = 'roof'; }
+      if (!fermCat.sublieux.some(s=>s.id==='fermeture-rdc-am')){
+        const amDef = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='fermeture').sublieux.find(s=>s.id==='fermeture-rdc-am')));
+        const at = rdcPm ? fermCat.sublieux.indexOf(rdcPm) : 0;
+        fermCat.sublieux.splice(at, 0, amDef);
+      }
+      structure.fermetureAmSeeded = true;
       await window.storage.set('structure', JSON.stringify(structure), true);
     }
     const ateliersCat = structure.categories.find(c=>c.id==='ateliers');
@@ -2932,8 +2965,10 @@ window.agAuth = {
     }
     else if (action === 'goHistorique'){
       if (state.managerUnlocked){
-        const [historique, pertes, temperatures, tracabilite] = await Promise.all([getHistorique(), getPertes(), getTemperatures(), getTracabilite()]);
+        const [historique, pertes, temperatures, tracabilite, requisitionsHist] = await Promise.all([getHistorique(), getPertes(), getTemperatures(), getTracabilite(), getRequisitions()]);
         state.historique = historique;
+        state.requisitionsHist = requisitionsHist;
+        state.historiqueReqId = null;
         state.pertes = pertes;
         state.temperatures = temperatures;
         state.tracabilite = tracabilite;
@@ -2984,6 +3019,14 @@ window.agAuth = {
     }
     else if (action === 'openHistoriqueTraca'){
       state.historiqueTracaId = payload;
+      render();
+    }
+    else if (action === 'openHistoriqueReq'){
+      state.historiqueReqId = payload;
+      render();
+    }
+    else if (action === 'backHistoriqueReq'){
+      state.historiqueReqId = null;
       render();
     }
     else if (action === 'backHistoriqueTraca'){
@@ -3042,11 +3085,16 @@ window.agAuth = {
     else if (action === 'goFermeture'){
       if (state.managerUnlocked){
         state.structure = await getStructureRaw();
+        state.fermetureFloor = null;
         state.screen = 'fermeture';
       } else {
         state.lockedFor = 'fermeture';
         state.screen = 'manager-locked';
       }
+      render();
+    }
+    else if (action === 'fermetureFloor'){
+      state.fermetureFloor = payload || null;
       render();
     }
     else if (action === 'goManagerPlanning'){
@@ -5443,23 +5491,44 @@ window.agAuth = {
 
   function screenFermeture(){
     const cat = state.structure.categories.find(function(c){ return c.id === 'fermeture'; });
+    const floor = state.fermetureFloor;
+    const floorSubs = (cat && floor) ? cat.sublieux.filter(function(s){ return s.floor === floor; }) : [];
+    const inFloor = !!(cat && floor && floorSubs.length);
+    const floorLabel = floor === 'rdc' ? 'RDC' : (floor === 'roof' ? 'Roof' : '');
+    const backAction = inFloor ? "appAction(\'fermetureFloor\',null)" : "appAction(\'goManagerMenu\')";
     let out = '<div style="padding:20px 16px 8px">'+
       '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
-        '<div onclick="appAction(\'goManagerMenu\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
-        '<div style="flex:1"><h1 class="mama-title" style="font-size:20px;color:var(--text-primary);margin:0">Fermeture</h1>'+
-        '<p style="color:var(--text-secondary);margin:2px 0 0;font-size:14px">Clôture de la journée</p></div>'+
+        '<div onclick="'+backAction+'" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<div style="flex:1"><h1 class="mama-title" style="font-size:20px;color:var(--text-primary);margin:0">'+(inFloor ? 'Fermer le '+esc(floorLabel) : 'Fermer un floor')+'</h1>'+
+        '<p style="color:var(--text-secondary);margin:2px 0 0;font-size:14px">'+(inFloor ? 'Quel service clôtures-tu ?' : 'Quel floor veux-tu clôturer ?')+'</p></div>'+
       '</div>'+
     '</div>';
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    const card = function(onclick, ic, label, sub){
+      return '<div onclick="'+onclick+'" style="display:flex;align-items:center;gap:12px;padding:16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">'+
+        '<div style="width:36px;height:36px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--bg-accent,#FFD500);color:var(--text-primary);display:flex;align-items:center;justify-content:center">'+icon(ic,18)+'</div>'+
+        '<div style="flex:1"><div class="mama-title" style="font-size:15px;color:var(--text-primary)">'+esc(label)+'</div>'+
+        (sub ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+esc(sub)+'</div>' : '')+'</div>'+
+        icon('chevronRight',18)+
+      '</div>';
+    };
     if (!cat || cat.sublieux.length === 0){
       out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucun espace à clôturer pour l\'instant.</div>';
+    } else if (inFloor){
+      floorSubs.forEach(function(sub){
+        const shift = sub.shift || sub.name;
+        const hint = shift === 'AM' ? 'Fin du service du matin' : (shift === 'PM' ? 'Fin du service du soir' : '');
+        out += card("appAction(\'openSublieu\', {catId:\'fermeture\', subId:\'"+sub.id+"\'})", sub.icon || 'door', shift, hint);
+      });
     } else {
+      const seen = {};
       cat.sublieux.forEach(function(sub){
-        out += '<div onclick="appAction(\'openSublieu\', {catId:\'fermeture\', subId:\''+sub.id+'\'})" style="display:flex;align-items:center;gap:12px;padding:16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000)">'+
-          '<div style="width:36px;height:36px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--bg-accent,#FFD500);color:var(--text-primary);display:flex;align-items:center;justify-content:center">'+icon(sub.icon,18)+'</div>'+
-          '<div class="mama-title" style="flex:1;font-size:15px;color:var(--text-primary)">'+esc(sub.name)+'</div>'+
-          icon('chevronRight',18)+
-        '</div>';
+        if (sub.floor === 'rdc'){
+          if (seen.rdc) return; seen.rdc = true;
+          out += card("appAction(\'fermetureFloor\',\'rdc\')", 'door', 'RDC', 'AM ou PM');
+        } else {
+          out += card("appAction(\'openSublieu\', {catId:\'fermeture\', subId:\'"+sub.id+"\'})", sub.icon || 'door', sub.name, '');
+        }
       });
     }
     out += '</div>';
@@ -5930,6 +5999,37 @@ window.agAuth = {
   }
 
   function screenHistoriqueChecklists(){
+    // Niveau 3quater : détail d'une réquisition
+    if (state.historiqueReqId){
+      const rq = (state.requisitionsHist||[]).find(function(x){ return x.id === state.historiqueReqId; });
+      if (!rq){ state.historiqueReqId = null; }
+      else {
+        let out = '<div style="padding:8px 16px">';
+        out += '<div onclick="appAction(\'backHistoriqueReq\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;margin-bottom:12px;font-size:14px">'+icon('back',18)+'<span>Retour</span></div>';
+        out += '<div style="border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);padding:16px">';
+        out += '<div class="mama-title" style="font-size:16px;color:var(--text-primary)">'+esc(rq.sublieuName)+'</div>';
+        out += '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">'+esc(rq.categoryName)+' · Par '+esc(rq.operator)+' · '+esc(rq.when)+'</div>';
+        if (rq.comment){
+          out += '<div style="font-size:13px;color:var(--text-primary);margin-top:12px;padding:10px;border-radius:8px;background:var(--surface-0)">'+esc(rq.comment)+'</div>';
+        }
+        out += '</div>';
+        out += '<div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">';
+        (rq.products||[]).forEach(function(pr){
+          out += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1)">'+
+            '<div style="min-width:0"><div style="font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(pr.name)+'</div>'+
+            (pr.location ? '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">'+esc(pr.location)+'</div>' : '')+'</div>'+
+            '<div style="font-size:14px;font-weight:700;color:var(--text-accent,#E8432B);white-space:nowrap">'+esc(pr.quantity)+(pr.unit ? ' '+esc(pr.unit) : '')+'</div>'+
+          '</div>';
+        });
+        if (!rq.products || rq.products.length === 0){
+          out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucun produit demandé dans cette réquisition.</div>';
+        }
+        out += '</div>';
+        out += '</div>';
+        return out;
+      }
+    }
+
     // Niveau 3ter : détail d'un relevé de traçabilité précis
     if (state.historiqueTracaId){
       const tr = (state.tracabilite||[]).find(function(x){ return x.id === state.historiqueTracaId; });
@@ -6033,12 +6133,17 @@ window.agAuth = {
       const reports = state.historique.filter(function(h){ return h.categoryName === state.historiqueZone; }).map(function(h){ return { kind:'checklist', data:h }; });
       const tempReadings = (state.temperatures||[]).filter(function(t){ return t.categoryName === state.historiqueZone; }).map(function(t){ return { kind:'temperature', data:t }; });
       const tracaReadings = (state.tracabilite||[]).filter(function(t){ return t.categoryName === state.historiqueZone; }).map(function(t){ return { kind:'tracabilite', data:t }; });
-      let all = reports.concat(tempReadings).concat(tracaReadings);
+      const reqReadings = (state.requisitionsHist||[]).filter(function(t){ return t.categoryName === state.historiqueZone; }).map(function(t){ return { kind:'requisition', data:t }; });
+      let all = reports.concat(tempReadings).concat(tracaReadings).concat(reqReadings);
+      const tsOf = function(item){ const m = /-(\d{10,})/.exec(item.data.id || ''); return m ? +m[1] : 0; };
+      all = all.map(function(item, i){ return { item:item, i:i }; }).sort(function(a, b){ return (tsOf(b.item) - tsOf(a.item)) || (a.i - b.i); }).map(function(x){ return x.item; });
       const typeFilter = state.historiqueTypeFilter || 'tous';
       if (typeFilter === 'temperature'){
         all = all.filter(function(item){ return item.kind === 'temperature'; });
       } else if (typeFilter === 'tracabilite'){
         all = all.filter(function(item){ return item.kind === 'tracabilite'; });
+      } else if (typeFilter === 'requisition'){
+        all = all.filter(function(item){ return item.kind === 'requisition'; });
       } else if (typeFilter === 'nettoyage'){
         all = all.filter(function(item){ return item.kind === 'checklist' && /nettoyage/i.test(item.data.sublieuName); });
       } else if (typeFilter === 'checklists'){
@@ -6052,7 +6157,8 @@ window.agAuth = {
         {id:'checklists', label:'Checklists'},
         {id:'nettoyage', label:'Nettoyage'},
         {id:'temperature', label:'Température'},
-        {id:'tracabilite', label:'Traçabilité'}
+        {id:'tracabilite', label:'Traçabilité'},
+        {id:'requisition', label:'Réqui'}
       ];
       out += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">';
       filterOptions.forEach(function(f){
@@ -6065,7 +6171,7 @@ window.agAuth = {
       }
       all.forEach(function(item){
         const r = item.data;
-        const action = item.kind === 'temperature' ? 'openHistoriqueTemp' : (item.kind === 'tracabilite' ? 'openHistoriqueTraca' : 'openHistoriqueReport');
+        const action = item.kind === 'temperature' ? 'openHistoriqueTemp' : (item.kind === 'tracabilite' ? 'openHistoriqueTraca' : (item.kind === 'requisition' ? 'openHistoriqueReq' : 'openHistoriqueReport'));
         out += '<div onclick="appAction(\''+action+'\',\''+r.id+'\')" style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:space-between">'+
           '<div><div style="font-size:15px;font-weight:600;color:var(--text-primary)">'+esc(r.sublieuName)+'</div>'+
           '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">Par '+esc(r.operator)+' · '+esc(r.when)+'</div>'+
@@ -6090,7 +6196,8 @@ window.agAuth = {
     zoneNames.forEach(function(zoneName){
       const count = state.historique.filter(function(h){ return h.categoryName === zoneName; }).length
         + (state.temperatures||[]).filter(function(t){ return t.categoryName === zoneName; }).length
-        + (state.tracabilite||[]).filter(function(t){ return t.categoryName === zoneName; }).length;
+        + (state.tracabilite||[]).filter(function(t){ return t.categoryName === zoneName; }).length
+        + (state.requisitionsHist||[]).filter(function(t){ return t.categoryName === zoneName; }).length;
       out += '<div onclick="appAction(\'openHistoriqueZone\',\''+escJs(zoneName)+'\')" style="padding:16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:space-between">'+
         '<div class="mama-title" style="font-size:15px;color:var(--text-primary)">'+esc(zoneName)+'</div>'+
         '<div style="display:flex;align-items:center;gap:10px">'+
