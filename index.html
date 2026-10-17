@@ -215,6 +215,18 @@ window.agAuth = {
               {id:'a3-28', label:'J\'ai vérifié s\'il une pause était prévue dans cet atelier (si une pause est vendue, installer le set-up pause : Vichy, hauteur, verres à eau, assiettes, serviettes, cuillères à dessert)', obligatoire:true},
               {id:'a3-29', label:'J\'ai éteint la lumière en partant', obligatoire:true}
           ]},
+          { id:'atelier-yoga', name:'Yoga', icon:'palette', tasks:[
+              {id:'yoga-1', label:'Tout l\'atelier est vidé', obligatoire:true},
+              {id:'yoga-2', label:'Les tapis sont sortis et disposés au sol', obligatoire:true},
+              {id:'yoga-3', label:'Il n\'y a rien qui traîne', obligatoire:true},
+              {id:'yoga-4', label:'La lumière est éteinte', obligatoire:true}
+          ]},
+          { id:'atelier-enfants', name:'Atelier Enfants', icon:'palette', tasks:[
+              {id:'enf-1', label:'3 îlots de 2 tables sont montés', obligatoire:true},
+              {id:'enf-2', label:'Les jeux sont disposés sur les tables', obligatoire:true},
+              {id:'enf-3', label:'Il n\'y a rien qui traîne', obligatoire:true},
+              {id:'enf-4', label:'La lumière est éteinte', obligatoire:true}
+          ]},
           { id:'big', name:'Big', icon:'box', tasks:[
               {id:'t1', label:'Vérifier la propreté générale', obligatoire:true}
           ]},
@@ -1076,6 +1088,9 @@ window.agAuth = {
     prestationDraftTime: '',
     prestationDraftZone: '',
     prestationDraftInfo: '',
+    prestationDraftZoneOther: '',
+    prestationDraftType: '',
+    prestationDraftTypeOther: '',
     eventFormGroup: '',
     eventFormGuests: '',
     eventFormNote: '',
@@ -1134,6 +1149,7 @@ window.agAuth = {
     requisitions: [],
     economeDay: null,
     economeReportId: null,
+    followReqId: null,
     managerUnlocked: false,
     lockedFor: null,
     name: '',
@@ -1236,7 +1252,7 @@ window.agAuth = {
     return d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
   }
 
-  const CURRENT_MIGRATION_VERSION = 13;
+  const CURRENT_MIGRATION_VERSION = 14;
   async function getMigrationVersion(){
     try {
       const res = await window.storage.get('migrationVersion', true);
@@ -1385,6 +1401,21 @@ window.agAuth = {
         fermCat.sublieux.splice(at, 0, amDef);
       }
       structure.fermetureAmSeeded = true;
+      await window.storage.set('structure', JSON.stringify(structure), true);
+    }
+    // Migration : ajout (une seule fois) des checklists Yoga et Atelier Enfants dans Les ateliers.
+    const ateliersSeed = structure.categories.find(c=>c.id==='ateliers');
+    if (ateliersSeed && !structure.yogaEnfantsSeeded){
+      const defAt = DEFAULT_STRUCTURE.categories.find(c=>c.id==='ateliers');
+      ['atelier-yoga','atelier-enfants'].forEach(function(sid){
+        if (!ateliersSeed.sublieux.some(s=>s.id===sid)){
+          const def = defAt.sublieux.find(s=>s.id===sid);
+          const bigIdx = ateliersSeed.sublieux.findIndex(s=>s.id==='big');
+          const copy = JSON.parse(JSON.stringify(def));
+          if (bigIdx >= 0) ateliersSeed.sublieux.splice(bigIdx, 0, copy); else ateliersSeed.sublieux.push(copy);
+        }
+      });
+      structure.yogaEnfantsSeeded = true;
       await window.storage.set('structure', JSON.stringify(structure), true);
     }
     const ateliersCat = structure.categories.find(c=>c.id==='ateliers');
@@ -2014,7 +2045,7 @@ window.agAuth = {
   }
 
   const SESSION_SNAPSHOT_KEY = 'copilote_session_snapshot';
-  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','agm','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','entertainmentEditingId','entFormDate','entFormType','entFormInfo','cameFromManagerMenu'];
+  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','agm','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','prestationDraftZoneOther','prestationDraftType','prestationDraftTypeOther','entertainmentEditingId','entFormDate','entFormType','entFormInfo','entFormPlace','cameFromManagerMenu'];
   function compressImageDataUrl(dataUrl, maxWidth, quality){
     return new Promise(function(resolve){
       try {
@@ -2057,6 +2088,7 @@ window.agAuth = {
       if (!wasLoggedIn) return false;
       SESSION_SNAPSHOT_FIELDS.forEach(function(f){ if (snap[f] !== undefined) state[f] = snap[f]; });
       // Recharge les données nécessaires pour que l'écran restauré (ex: modification d'une fiche) fonctionne bien.
+      if (state.screen === 'requi-follow'){ state.requisitions = await getRequisitions(); state.followReqId = null; }
       if (state.screen === 'events-form' && state.eventsUnlocked){
         state.eventSheets = await getEventSheets();
       }
@@ -2617,6 +2649,7 @@ window.agAuth = {
       state.entFormDate = '';
       state.entFormType = '';
       state.entFormInfo = '';
+      state.entFormPlace = '';
       state.screen = 'entertainment-form';
       render();
     }
@@ -2626,6 +2659,7 @@ window.agAuth = {
       state.entFormDate = editingEv ? (editingEv.date||'') : '';
       state.entFormType = editingEv ? (editingEv.type||'') : '';
       state.entFormInfo = editingEv ? (editingEv.info||'') : '';
+      state.entFormPlace = editingEv ? (editingEv.place||'') : '';
       state.screen = 'entertainment-form';
       render();
     }
@@ -2640,19 +2674,24 @@ window.agAuth = {
       const typeOther = document.getElementById('ent-type-other').value.trim();
       const type = typeSelect === 'Autre' ? typeOther : typeSelect;
       const info = document.getElementById('ent-info').value.trim();
-      state.entFormDate = date; state.entFormType = type; state.entFormInfo = info;
+      const placeSelectEl = document.getElementById('ent-place-select');
+      const placeSelect = placeSelectEl ? placeSelectEl.value : '';
+      const placeOtherEl = document.getElementById('ent-place-other');
+      const placeOther = placeOtherEl ? placeOtherEl.value.trim() : '';
+      const place = placeSelect === 'Autres' ? placeOther : placeSelect;
+      state.entFormDate = date; state.entFormType = type; state.entFormInfo = info; state.entFormPlace = place;
       if (!date || !type) return;
       let list = state.events || [];
       if (state.entertainmentEditingId){
         const ev = list.find(function(e){ return e.id === state.entertainmentEditingId; });
-        if (ev){ ev.date = date; ev.type = type; ev.info = info; }
+        if (ev){ ev.date = date; ev.type = type; ev.info = info; ev.place = place; }
       } else {
-        list.push({ id: 'ev-'+Date.now(), date: date, type: type, info: info });
+        list.push({ id: 'ev-'+Date.now(), date: date, type: type, info: info, place: place });
       }
       await saveEvents(list);
       state.events = list;
       state.entertainmentEditingId = null;
-      state.entFormDate = ''; state.entFormType = ''; state.entFormInfo = '';
+      state.entFormDate = ''; state.entFormType = ''; state.entFormInfo = ''; state.entFormPlace = '';
       state.screen = 'entertainment-list';
       render();
     }
@@ -2677,6 +2716,7 @@ window.agAuth = {
       state.prestationDraftTime = '';
       state.prestationDraftZone = '';
       state.prestationDraftInfo = '';
+      state.prestationDraftZoneOther = ''; state.prestationDraftType = ''; state.prestationDraftTypeOther = '';
       state.screen = 'events-form';
       render();
     }
@@ -2701,19 +2741,28 @@ window.agAuth = {
       state.prestationDraftTime = '';
       state.prestationDraftZone = '';
       state.prestationDraftInfo = '';
+      state.prestationDraftZoneOther = ''; state.prestationDraftType = ''; state.prestationDraftTypeOther = '';
       state.screen = 'events-form';
       render();
     }
     else if (action === 'addPrestation'){
-      const zone = document.getElementById('prestation-zone').value;
+      const zoneSel = document.getElementById('prestation-zone').value;
+      const zoneOtherEl = document.getElementById('prestation-zone-other');
+      const zone = zoneSel === 'Autres' ? (zoneOtherEl ? zoneOtherEl.value.trim() : '') : zoneSel;
       if (!zone){ render(); return; }
       const time = document.getElementById('prestation-time').value;
+      const typeSel = document.getElementById('prestation-type').value;
+      const typeOtherEl = document.getElementById('prestation-type-other');
+      const ptype = typeSel === 'Autres' ? (typeOtherEl ? typeOtherEl.value.trim() : '') : typeSel;
       const info = document.getElementById('prestation-info').value.trim();
       state.eventFormPrestations = state.eventFormPrestations || [];
-      state.eventFormPrestations.push({ time: time, zone: zone, info: info });
+      state.eventFormPrestations.push({ time: time, zone: zone, type: ptype, info: info });
       state.prestationDraftTime = '';
       state.prestationDraftZone = '';
       state.prestationDraftInfo = '';
+      state.prestationDraftZoneOther = '';
+      state.prestationDraftType = '';
+      state.prestationDraftTypeOther = '';
       render();
     }
     else if (action === 'deletePrestation'){
@@ -3822,10 +3871,7 @@ window.agAuth = {
       render();
     }
     else if (action === 'adminReqDeleteFridge'){
-      const sub = findSublieu(state.adminReqCatId, state.adminReqSubId);
-      sub.products = sub.products.filter(function(p){ return (p.location||'Autres') !== payload; });
-      await saveStructure(state.structure);
-      if (state.adminReqExpandedFridge === payload) state.adminReqExpandedFridge = null;
+      return; // suppression d'un frigo entier désactivée : seuls les produits peuvent être supprimés
       render();
     }
     else if (action === 'adminReqMoveFridgeToPosition'){
@@ -4207,6 +4253,44 @@ window.agAuth = {
       if (idx < 0) idx = locations.length - 1;
       if (idx >= locations.length) idx = 0;
       state.requisitionFridgeIndex = idx;
+      render();
+    }
+    else if (action === 'openRequiFollow'){
+      state.requisitions = await getRequisitions();
+      state.followReqId = null;
+      state.screen = 'requi-follow';
+      render();
+    }
+    else if (action === 'openRequiFollowItem'){
+      state.requisitions = await getRequisitions();
+      state.followReqId = payload;
+      render();
+    }
+    else if (action === 'backRequiFollow'){
+      state.followReqId = null;
+      render();
+    }
+    else if (action === 'goRequiForm'){
+      state.screen = 'requisition-form';
+      render();
+    }
+    else if (action === 'toggleRequiCheck' || action === 'validateRequiStage'){
+      // relecture juste avant écriture : limite les écrasements si cave et étage cochent en même temps
+      const list = await getRequisitions();
+      const r = list.find(function(x){ return x.id === payload.id; });
+      if (!r) return;
+      const who = state.name || (state.economeUnlocked ? 'Économe' : '');
+      const at = new Date().toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+      if (action === 'toggleRequiCheck'){
+        const p = r.products[payload.idx];
+        if (!p) return;
+        if (p[payload.stage]) delete p[payload.stage]; else p[payload.stage] = { by: who, at: at };
+      } else {
+        r.validation = r.validation || {};
+        r.validation[payload.stage] = { by: who, at: at };
+      }
+      await window.storage.set('requisitions', JSON.stringify(list.slice(0,2000)), true);
+      state.requisitions = list;
       render();
     }
     else if (action === 'saveRequisition'){
@@ -5002,6 +5086,7 @@ window.agAuth = {
     }
 
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    out += '<button onclick="appAction(\'openRequiFollow\')" style="width:100%;padding:12px;border-radius:10px;font-size:13px;font-weight:800;text-transform:uppercase;cursor:pointer;border:2.5px solid var(--border-strong,#000);box-shadow:3px 3px 0 var(--border-strong,#000);background:var(--bg-accent,#FFD500);color:var(--text-primary)">Suivi des réquis</button>';
 
     if (isRich){
       const locations = getRequisitionLocations(sub);
@@ -5178,6 +5263,7 @@ window.agAuth = {
         '<div style="flex:1">'+
           '<div style="font-size:13px;font-weight:700;color:var(--text-accent,#E8432B)">'+esc(dayLabelOf(ev.date))+'</div>'+
           '<div style="font-size:15px;font-weight:600;color:var(--text-primary);margin-top:2px">'+esc(ev.type)+'</div>'+
+          (ev.place ? '<div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-top:2px">Lieu : '+esc(ev.place)+'</div>' : '')+
           (ev.info ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">'+esc(ev.info)+'</div>' : '')+
         '</div>'+
         '<span onclick="appAction(\'editEntertainmentEvent\',\''+ev.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
@@ -5205,6 +5291,20 @@ window.agAuth = {
       '</select>'+
       '<div id="ent-type-other-wrap" style="display:'+(isOther?'block':'none')+';margin-top:8px">'+
         '<input id="ent-type-other" type="text" placeholder="Précise le type d\'animation" value="'+(isOther?esc(state.entFormType):'')+'" oninput="trackFormField(\'entFormType\', this.value)" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px">'+
+      '</div>'+
+    '</div>';
+    const standardPlaces = ['RDC','Roof','Terrasse','Cinémama'];
+    const placeNow = state.entFormPlace || '';
+    const placeIsOther = !!placeNow && !standardPlaces.includes(placeNow);
+    const placeFieldStyle = 'width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:16px';
+    out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Lieu de l\'animation</label>'+
+      '<select id="ent-place-select" onchange="trackFormField(\'entFormPlace\', this.value === \'Autres\' ? \'\' : this.value); document.getElementById(\'ent-place-other-wrap\').style.display=this.value===\'Autres\'?\'block\':\'none\'" style="'+placeFieldStyle+';margin-top:6px">'+
+        '<option value="" '+(!placeNow?'selected':'')+'>Non précisé</option>'+
+        standardPlaces.map(function(t){ return '<option value="'+esc(t)+'" '+(placeNow===t?'selected':'')+'>'+esc(t)+'</option>'; }).join('')+
+        '<option value="Autres" '+(placeIsOther?'selected':'')+'>Autres</option>'+
+      '</select>'+
+      '<div id="ent-place-other-wrap" style="display:'+(placeIsOther?'block':'none')+';margin-top:8px">'+
+        '<input id="ent-place-other" type="text" placeholder="Précise le lieu" value="'+(placeIsOther?esc(placeNow):'')+'" oninput="trackFormField(\'entFormPlace\', this.value)" style="'+placeFieldStyle+'">'+
       '</div>'+
     '</div>';
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Infos spéciales (optionnel)</label>'+
@@ -5243,15 +5343,13 @@ window.agAuth = {
       out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucune fiche de fonction pour l\'instant.</div>';
     }
     sheets.forEach(function(sh){
-      const prestationsSummary = (sh.prestations && sh.prestations.length)
-        ? sh.prestations.map(function(p){ return (p.time?p.time+' ':'')+p.zone; }).join(' · ')
-        : ((sh.locations && sh.locations.length) ? sh.locations.join(', ') : '');
+      const prestationsSummary = prestationLines(sh).map(function(l){ return esc(l); }).join('<br>');
       out += '<div style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;align-items:center;gap:10px">'+
         '<div style="flex:1">'+
           '<div style="font-size:13px;font-weight:700;color:#7A5FE0">'+esc(dayLabelWithWeekday(sh.date))+'</div>'+
           '<div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-top:2px">'+esc(sh.groupName || sh.filename || 'Fiche événement')+'</div>'+
           (sh.groupName && sh.filename ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:1px">'+esc(sh.filename)+'</div>' : '')+
-          (prestationsSummary ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+esc(prestationsSummary)+(sh.guests?' · '+esc(sh.guests)+' guests':'')+'</div>' : (sh.guests ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+esc(sh.guests)+' guests</div>' : ''))+
+          (prestationsSummary ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+prestationsSummary+(sh.guests?'<br>'+esc(sh.guests)+' guests':'')+'</div>' : (sh.guests ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+esc(sh.guests)+' guests</div>' : ''))+
           (sh.note ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">'+esc(sh.note)+'</div>' : '')+
         '</div>'+
         (sh.filename ? '<span onclick="appAction(\'viewEventPdf\',\''+sh.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('eye',16)+'</span>' : '')+
@@ -5263,10 +5361,23 @@ window.agAuth = {
     return out;
   }
 
+  function prestationLines(sh){
+    if (sh.prestations && sh.prestations.length){
+      return sh.prestations.slice().sort(function(a, b){
+        const ta = a.time || '99:99', tb = b.time || '99:99';
+        return ta < tb ? -1 : (ta > tb ? 1 : 0);
+      }).map(function(p){
+        return (p.time ? p.time+' ' : '') + (p.type ? p.type+' · '+p.zone : p.zone);
+      });
+    }
+    return (sh.locations && sh.locations.length) ? [sh.locations.join(', ')] : [];
+  }
+
   function screenEventsForm(){
     const editing = state.eventsEditingId ? (state.eventSheets||[]).find(function(e){ return e.id === state.eventsEditingId; }) : null;
     const allLocations = ['Atelier 1','Atelier 2','Big','Cinémama','Roof','Terrasse','Restaurant','Patio','Room 122','Room 222'];
     const commentSuggestions = ['Jarre de cocktails','Bon open bar'];
+    const prestationTypes = ['Location','Déjeuner','Diner','Pause AM','Pause PM','Déjeunette','Dinette','Karaoké'];
     const prestations = state.eventFormPrestations || [];
     let out = eventsHeader();
     out += '<div style="padding:8px 16px">';
@@ -5287,7 +5398,7 @@ window.agAuth = {
       prestations.forEach(function(p, i){
         out += '<div style="display:flex;align-items:flex-start;gap:10px;padding:12px;border:2px solid var(--border-strong,var(--border));border-radius:8px;background:var(--surface-1)">'+
           '<div style="flex:1">'+
-            '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+(p.time?esc(p.time)+' — ':'')+esc(p.zone)+'</div>'+
+            '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+(p.time?esc(p.time)+' — ':'')+(p.type?esc(p.type)+' · ':'')+esc(p.zone)+'</div>'+
             (p.info ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">'+esc(p.info)+'</div>' : '')+
           '</div>'+
           '<span onclick="appAction(\'deletePrestation\','+i+')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',15)+'</span>'+
@@ -5298,10 +5409,22 @@ window.agAuth = {
     out += '<div style="margin-top:10px;padding:12px;border:2px dashed var(--border-strong,var(--border));border-radius:8px;background:var(--surface-0)">'+
       '<div style="display:flex;gap:8px;margin-bottom:8px">'+
         '<input id="prestation-time" type="time" value="'+esc(state.prestationDraftTime)+'" oninput="trackFormField(\'prestationDraftTime\', this.value)" style="flex:1;box-sizing:border-box;padding:10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px">'+
-        '<select id="prestation-zone" onchange="trackFormField(\'prestationDraftZone\', this.value)" style="flex:1;box-sizing:border-box;padding:10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px">'+
+        '<select id="prestation-zone" onchange="trackFormField(\'prestationDraftZone\', this.value); document.getElementById(\'prestation-zone-other-wrap\').style.display=this.value===\'Autres\'?\'block\':\'none\'" style="flex:1;box-sizing:border-box;padding:10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px">'+
           '<option value="">Zone…</option>'+
           allLocations.map(function(loc){ return '<option value="'+esc(loc)+'" '+(state.prestationDraftZone===loc?'selected':'')+'>'+esc(loc)+'</option>'; }).join('')+
+          '<option value="Autres" '+(state.prestationDraftZone==='Autres'?'selected':'')+'>Autres</option>'+
         '</select>'+
+      '</div>'+
+      '<div id="prestation-zone-other-wrap" style="display:'+(state.prestationDraftZone==='Autres'?'block':'none')+';margin-bottom:8px">'+
+        '<input id="prestation-zone-other" type="text" placeholder="Précise la zone" value="'+esc(state.prestationDraftZoneOther)+'" oninput="trackFormField(\'prestationDraftZoneOther\', this.value)" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px">'+
+      '</div>'+
+      '<select id="prestation-type" onchange="trackFormField(\'prestationDraftType\', this.value); document.getElementById(\'prestation-type-other-wrap\').style.display=this.value===\'Autres\'?\'block\':\'none\'" style="width:100%;box-sizing:border-box;padding:10px;margin-bottom:8px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px">'+
+        '<option value="">Type de prestation…</option>'+
+        prestationTypes.map(function(t){ return '<option value="'+esc(t)+'" '+(state.prestationDraftType===t?'selected':'')+'>'+esc(t)+'</option>'; }).join('')+
+        '<option value="Autres" '+(state.prestationDraftType==='Autres'?'selected':'')+'>Autres</option>'+
+      '</select>'+
+      '<div id="prestation-type-other-wrap" style="display:'+(state.prestationDraftType==='Autres'?'block':'none')+';margin-bottom:8px">'+
+        '<input id="prestation-type-other" type="text" placeholder="Précise le type de prestation" value="'+esc(state.prestationDraftTypeOther)+'" oninput="trackFormField(\'prestationDraftTypeOther\', this.value)" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px">'+
       '</div>'+
       '<input id="prestation-info" type="text" placeholder="Info particulière (optionnel)" value="'+esc(state.prestationDraftInfo)+'" oninput="trackFormField(\'prestationDraftInfo\', this.value)" style="width:100%;box-sizing:border-box;padding:10px;margin-bottom:8px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:14px">'+
       '<button onclick="appAction(\'addPrestation\')" style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:#7A5FE0;color:#fff;font-size:13px;font-weight:800;text-transform:uppercase;cursor:pointer">+ Ajouter une prestation</button>'+
@@ -5431,11 +5554,127 @@ window.agAuth = {
       const zone = r.sublieuName.replace('Réqui ', '');
       out += '<div onclick="appAction(\'openEconomeReport\',\''+r.id+'\')" style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:space-between">'+
         '<div><div style="font-size:15px;font-weight:600;color:var(--text-primary)">'+esc(r.sublieuName)+'</div>'+
-        '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">Par '+esc(r.operator)+' · '+esc(r.when)+' · <span style="font-weight:700;color:var(--text-accent,#E8432B)">'+esc(zone)+'</span></div></div>'+
+        '<div style="font-size:13px;color:var(--text-secondary);margin:2px 0 6px">Par '+esc(r.operator)+' · '+esc(r.when)+' · <span style="font-weight:700;color:var(--text-accent,#E8432B)">'+esc(zone)+'</span></div>'+requiStatusBadge(r)+'</div>'+
         icon('chevronRight',18)+
       '</div>';
     });
     out += '</div>';
+    return out;
+  }
+
+  // ===== Suivi d'une réqui : étape « Cave » (préparation) puis « Étage » (réception) =====
+  function requiStageCounts(r, stage){
+    const prods = r.products || [];
+    let done = 0;
+    prods.forEach(function(p){ if (p[stage]) done++; });
+    return { done: done, total: prods.length, missing: prods.length - done };
+  }
+  function requiStageValidated(r, stage){ return !!(r.validation && r.validation[stage]); }
+  function requiStageIncomplete(r, stage){ return requiStageValidated(r, stage) && requiStageCounts(r, stage).missing > 0; }
+  function requiStatusLabel(r){
+    const cave = requiStageValidated(r, 'cave'), etage = requiStageValidated(r, 'etage');
+    if (cave && etage) return (requiStageIncomplete(r,'cave') || requiStageIncomplete(r,'etage')) ? { t:'Terminée · Incomplet', red:true } : { t:'Terminée', ok:true };
+    if (cave) return { t: requiStageIncomplete(r,'cave') ? 'Cave validée · Incomplet' : 'Cave validée', red: requiStageIncomplete(r,'cave') };
+    const c = requiStageCounts(r,'cave');
+    if (c.done > 0 || requiStageCounts(r,'etage').done > 0) return { t:'En préparation' };
+    return { t:'Nouvelle' };
+  }
+  function requiStatusBadge(r){
+    const st = requiStatusLabel(r);
+    const bg = st.red ? 'var(--text-danger,#A32D2D)' : (st.ok ? 'var(--text-success,#1F7A3D)' : 'var(--surface-0)');
+    const fg = (st.red || st.ok) ? '#fff' : 'var(--text-primary)';
+    return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;border:1.5px solid var(--border-strong,#000);background:'+bg+';color:'+fg+';font-size:11px;font-weight:800;white-space:nowrap">'+esc(st.t)+'</span>';
+  }
+  function requiStageCard(r, stage, label){
+    const cnt = requiStageCounts(r, stage);
+    const val = r.validation && r.validation[stage];
+    const incomplete = requiStageIncomplete(r, stage);
+    let body = '';
+    if (val){
+      body += '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">Validée par '+esc(val.by||'')+(val.at?' · '+esc(val.at):'')+'</div>';
+      if (incomplete){
+        body += '<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:var(--text-danger,#A32D2D);color:#fff;font-size:12px;font-weight:800">⚠ Incomplet — '+cnt.missing+' produit'+(cnt.missing>1?'s':'')+' non coché'+(cnt.missing>1?'s':'')+'</div>';
+      } else {
+        body += '<div style="margin-top:6px;font-size:12px;font-weight:800;color:var(--text-success,#1F7A3D)">✓ Complet</div>';
+      }
+    } else {
+      body += '<button onclick="appAction(\'validateRequiStage\',{id:\''+r.id+'\',stage:\''+stage+'\'})" style="margin-top:8px;width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:13px;font-weight:800;text-transform:uppercase;box-shadow:2px 2px 0 var(--border-strong,#000);cursor:pointer">Valider '+(stage==='cave'?'la cave':'le réassort')+'</button>';
+    }
+    return '<div style="flex:1;min-width:140px;padding:12px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1)">'+
+      '<div class="mama-title" style="font-size:13px;color:var(--text-primary)">'+esc(label)+' <span style="color:var(--text-muted);font-weight:600">'+cnt.done+'/'+cnt.total+'</span></div>'+body+'</div>';
+  }
+  function requiTrackingHtml(r){
+    let out = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">'+
+      requiStageCard(r,'cave','① Cave')+requiStageCard(r,'etage','② Réassort')+'</div>';
+    out += '<div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">';
+    let lastLoc = null;
+    const pill = function(p, i, stage, label){
+      const m = p[stage];
+      return '<button onclick="appAction(\'toggleRequiCheck\',{id:\''+r.id+'\',idx:'+i+',stage:\''+stage+'\'})" style="padding:8px 10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:'+(m?'var(--text-success,#1F7A3D)':'var(--text-danger,#A32D2D)')+';color:#fff;font-size:12px;font-weight:800;cursor:pointer;min-width:74px">'+(m?'✓ ':'')+label+'</button>';
+    };
+    const askedPill = '<span style="padding:8px 10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-success,#1F7A3D);color:#fff;font-size:12px;font-weight:800;min-width:74px;text-align:center;box-sizing:border-box">✓ Demandé</span>';
+    (r.products||[]).forEach(function(p, i){
+      if (p.location && p.location !== lastLoc){
+        out += '<div class="mama-title" style="font-size:12px;color:var(--text-accent,#E8432B);margin-top:8px">'+esc(p.location)+'</div>';
+        lastLoc = p.location;
+      }
+      const miss = (requiStageValidated(r,'cave') && !p.cave) || (requiStageValidated(r,'etage') && !p.etage);
+      const who = [p.cave ? 'Cave : '+(p.cave.by||'') : '', p.etage ? 'Réassort : '+(p.etage.by||'') : ''].filter(Boolean).join(' · ');
+      out += '<div style="padding:10px 12px;border:2px solid '+(miss?'var(--text-danger,#A32D2D)':'var(--border-strong,var(--border))')+';border-radius:10px;background:'+(miss?'rgba(163,45,45,.10)':'var(--surface-1)')+'">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'+
+          '<div style="min-width:0"><div style="font-size:14px;font-weight:600;color:'+(miss?'var(--text-danger,#A32D2D)':'var(--text-primary)')+'">'+esc(p.name)+'</div>'+
+          (p.unit ? '<div style="font-size:11px;color:var(--text-muted)">'+esc(p.unit)+'</div>' : '')+'</div>'+
+          '<div style="font-size:15px;font-weight:800;color:var(--text-accent,#E8432B);white-space:nowrap">× '+esc(p.quantity)+'</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">'+askedPill+pill(p,i,'cave','Cave')+pill(p,i,'etage','Réassort')+
+          (who ? '<span style="font-size:11px;color:var(--text-muted)">'+esc(who)+'</span>' : '')+
+        '</div>'+
+      '</div>';
+    });
+    out += '</div>';
+    return out;
+  }
+
+  function screenRequiFollow(){
+    const back = state.followReqId ? "appAction('backRequiFollow')" : "appAction('goRequiForm')";
+    let out = '<div style="padding:20px 16px 8px">'+
+      '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
+        '<div onclick="'+back+'" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<div style="flex:1"><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">Suivi des réquis</h1>'+
+        '<p style="color:var(--text-secondary);margin:2px 0 0;font-size:13px">Demandé → Cave → Réassort</p></div>'+
+      '</div></div>';
+    const list = state.requisitions || [];
+    const r = state.followReqId ? list.find(function(x){ return x.id === state.followReqId; }) : null;
+    out += '<div style="padding:8px 16px">';
+    if (r){
+      out += '<div style="border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);padding:14px">'+
+        '<div class="mama-title" style="font-size:16px;color:var(--text-primary)">'+esc(r.sublieuName)+'</div>'+
+        '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">Par '+esc(r.operator)+' · '+esc(r.when)+'</div>'+
+        (r.comment ? '<div style="font-size:13px;margin-top:10px;padding:8px;border-radius:8px;background:var(--surface-0)">'+esc(r.comment)+'</div>' : '')+
+      '</div>';
+      out += requiTrackingHtml(r);
+    } else {
+      const today = dayKeyOf(new Date());
+      const y = new Date(); y.setDate(y.getDate()-1);
+      const days = [today, dayKeyOf(y)];
+      const week = []; for (let k=2;k<=7;k++){ const d=new Date(); d.setDate(d.getDate()-k); week.push(dayKeyOf(d)); }
+      const recent = list.filter(function(x){
+        if (days.indexOf(x.dayKey) >= 0) return true;
+        // une réqui plus ancienne reste visible tant que le réassort n'est pas validé
+        return week.indexOf(x.dayKey) >= 0 && !requiStageValidated(x,'etage');
+      });
+      if (!recent.length) out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucune réqui récente.</div>';
+      out += '<div style="display:flex;flex-direction:column;gap:10px">';
+      recent.forEach(function(x){
+        out += '<div onclick="appAction(\'openRequiFollowItem\',\''+x.id+'\')" style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px">'+
+          '<div style="min-width:0"><div style="font-size:15px;font-weight:600;color:var(--text-primary)">'+esc(x.sublieuName)+'</div>'+
+          '<div style="font-size:12px;color:var(--text-secondary);margin:2px 0 6px">Par '+esc(x.operator)+' · '+esc(x.when)+'</div>'+requiStatusBadge(x)+'</div>'+
+          icon('chevronRight',18)+'</div>';
+      });
+      out += '</div>';
+    }
+    out += '</div>';
+    out += bottomNav('home');
     return out;
   }
 
@@ -5466,20 +5705,7 @@ window.agAuth = {
     }
     out += '</div>';
 
-    out += '<div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">';
-    let lastLoc = null;
-    r.products.forEach(function(p){
-      if (p.location && p.location !== lastLoc){
-        out += '<div class="mama-title" style="font-size:12px;color:var(--text-accent,#E8432B);margin-top:8px">'+esc(p.location)+'</div>';
-        lastLoc = p.location;
-      }
-      out += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1)">'+
-        '<div><div style="font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(p.name)+'</div>'+
-        (p.unit ? '<div style="font-size:11px;color:var(--text-muted)">'+esc(p.unit)+'</div>' : '')+'</div>'+
-        '<div style="font-size:14px;font-weight:700;color:var(--text-accent,#E8432B)">'+esc(p.quantity)+'</div>'+
-      '</div>';
-    });
-    out += '</div>';
+    out += requiTrackingHtml(r);
     out += '</div>';
     return out;
   }
@@ -5548,6 +5774,15 @@ window.agAuth = {
     for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)){
       days.push({ key: dayKeyOf(d), label: dayNames[d.getDay()]+' '+dayLabelOf(dayKeyOf(d)) });
     }
+    // Carte d'un élément du fil d'actu : le titre coloré est placé sur le côté gauche (onglet vertical).
+    const wuCard = function(label, color, textColor, bodyHtml){
+      return '<div style="display:flex;align-items:stretch;border:2px solid var(--border-strong,var(--border));border-radius:10px;margin-bottom:10px;background:var(--surface-0);overflow:hidden">'+
+        '<div style="flex:0 0 24px;background:'+color+';color:'+textColor+';display:flex;align-items:center;justify-content:center;border-right:2px solid var(--border-strong,var(--border))">'+
+          '<span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;padding:6px 0">'+esc(label)+'</span>'+
+        '</div>'+
+        '<div style="flex:1;min-width:0;padding:10px 12px">'+bodyHtml+'</div>'+
+      '</div>';
+    };
     let out = '<div style="padding:0 8px">'+
       '<div id="whatsup-scroll" style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;gap:0">';
     days.forEach(function(day){
@@ -5562,29 +5797,22 @@ window.agAuth = {
         out += '<div style="text-align:center;color:var(--text-muted);font-size:14px;padding:30px 10px">Rien de prévu ce jour-là.</div>';
       } else {
         rhEvs.forEach(function(rh){
-          out += '<div style="border:2px solid var(--border-strong,var(--border));border-radius:10px;padding:12px;margin-bottom:10px;background:var(--surface-0)">'+
-            '<span style="display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#fff;background:#3FAE6A;padding:2px 8px;border-radius:999px;margin-bottom:6px">RH</span>'+
-            '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(rh.type)+'</div>'+
-          '</div>';
+          out += wuCard('RH', '#3FAE6A', '#fff',
+            '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(rh.type)+'</div>');
         });
         events.forEach(function(ev){
-          out += '<div style="border:2px solid var(--border-strong,var(--border));border-radius:10px;padding:12px;margin-bottom:10px;background:var(--surface-0)">'+
-            '<span style="display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#fff;background:#FF8AB4;padding:2px 8px;border-radius:999px;margin-bottom:6px">Entertainment</span>'+
+          out += wuCard('Entertainment', '#FF8AB4', '#1A1A1A',
             '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(ev.type)+'</div>'+
-            (ev.info ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">'+esc(ev.info)+'</div>' : '')+
-          '</div>';
+            (ev.place ? '<div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-top:4px">Lieu : '+esc(ev.place)+'</div>' : '')+
+            (ev.info ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">'+esc(ev.info)+'</div>' : ''));
         });
         sheets.forEach(function(sh){
-          const prestationsSummary = (sh.prestations && sh.prestations.length)
-            ? sh.prestations.map(function(p){ return (p.time?p.time+' ':'')+p.zone; }).join(' · ')
-            : ((sh.locations && sh.locations.length) ? sh.locations.join(', ') : '');
-          out += '<div style="border:2px solid var(--border-strong,var(--border));border-radius:10px;padding:12px;margin-bottom:10px;background:var(--surface-0)">'+
-            '<span style="display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#fff;background:#7A5FE0;padding:2px 8px;border-radius:999px;margin-bottom:6px">Events</span>'+
+          const prestationsSummary = prestationLines(sh).map(function(l){ return esc(l); }).join('<br>');
+          out += wuCard('Events', '#7A5FE0', '#fff',
             (sh.groupName ? '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(sh.groupName)+'</div>' : '')+
-            (prestationsSummary ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">'+esc(prestationsSummary)+'</div>' : '')+
+            (prestationsSummary ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px;line-height:1.5">'+prestationsSummary+'</div>' : '')+
             (sh.guests ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">'+esc(sh.guests)+' guests</div>' : '')+
-            (sh.note ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">'+esc(sh.note)+'</div>' : '')+
-          '</div>';
+            (sh.note ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">'+esc(sh.note)+'</div>' : ''));
         });
       }
       out += '</div></div>';
@@ -6009,10 +6237,19 @@ window.agAuth = {
         }
         out += '</div>';
         out += '<div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">';
+        out += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
+          ['cave','etage'].map(function(st){
+            const v = rq.validation && rq.validation[st], inc = requiStageIncomplete(rq, st), c = requiStageCounts(rq, st);
+            return '<div style="flex:1;min-width:140px;padding:10px;border:2px solid '+(inc?'var(--text-danger,#A32D2D)':'var(--border-strong,var(--border))')+';border-radius:10px;background:var(--surface-1);font-size:12px">'+
+              '<div style="font-weight:800;color:var(--text-primary)">'+(st==='cave'?'Cave':'Réassort')+' · '+c.done+'/'+c.total+'</div>'+
+              '<div style="color:'+(inc?'var(--text-danger,#A32D2D)':'var(--text-secondary)')+';margin-top:2px;font-weight:'+(inc?'800':'400')+'">'+(v ? (inc?'⚠ Incomplet · ':'✓ ')+esc(v.by||'')+(v.at?' · '+esc(v.at):'') : 'Non validée')+'</div></div>';
+          }).join('')+'</div>';
         (rq.products||[]).forEach(function(pr){
-          out += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1)">'+
+          const missH = (requiStageValidated(rq,'cave') && !pr.cave) || (requiStageValidated(rq,'etage') && !pr.etage);
+          out += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:2px solid '+(missH?'var(--text-danger,#A32D2D)':'var(--border-strong,var(--border))')+';border-radius:10px;background:'+(missH?'rgba(163,45,45,.10)':'var(--surface-1)')+'">'+
             '<div style="min-width:0"><div style="font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(pr.name)+'</div>'+
-            (pr.location ? '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">'+esc(pr.location)+'</div>' : '')+'</div>'+
+            (pr.location ? '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">'+esc(pr.location)+'</div>' : '')+
+            '<div style="font-size:11px;margin-top:2px;color:'+(missH?'var(--text-danger,#A32D2D)':'var(--text-muted)')+'">Demandé ✓ · Cave '+(pr.cave?'✓':'—')+' · Réassort '+(pr.etage?'✓':'—')+'</div></div>'+
             '<div style="font-size:14px;font-weight:700;color:var(--text-accent,#E8432B);white-space:nowrap">'+esc(pr.quantity)+(pr.unit ? ' '+esc(pr.unit) : '')+'</div>'+
           '</div>';
         });
@@ -6619,7 +6856,6 @@ window.agAuth = {
           '<input type="number" min="1" max="'+fridges.length+'" value="'+(fIdx+1)+'" onclick="event.stopPropagation()" onchange="event.stopPropagation();appAction(\'adminReqMoveFridgeToPosition\', {fridgeName:\''+escJs(fridgeName)+'\', position:parseInt(this.value,10)})" style="width:38px;padding:4px;text-align:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:12px;flex-shrink:0">'+
           '<span style="flex:1;font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(fridgeName)+'</span>'+
           '<span onclick="event.stopPropagation();appAction(\'adminReqStartRenameFridge\',\''+escJs(fridgeName)+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',14)+'</span>'+
-          '<span onclick="event.stopPropagation();appAction(\'adminReqDeleteFridge\',\''+escJs(fridgeName)+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',14)+'</span>'+
           '<span style="color:var(--text-muted);transform:rotate('+(fridgeOpen?'180':'0')+'deg)">'+icon('chevronDown',16)+'</span>'+
         '</div>';
       }
@@ -6829,6 +7065,7 @@ window.agAuth = {
     else if (state.screen === 'temperatures-form') html = screenTemperatureForm();
     else if (state.screen === 'tracabilite-form') html = screenTracabiliteForm();
     else if (state.screen === 'requisition-form') html = screenRequisitionForm();
+    else if (state.screen === 'requi-follow') html = screenRequiFollow();
     else if (state.screen === 'manager-locked') html = screenManagerLocked();
     else if (state.screen === 'other-access-menu') html = screenOtherAccessMenu();
     else if (state.screen === 'access-management') html = screenAccessManagement();
