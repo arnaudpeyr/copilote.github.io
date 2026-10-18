@@ -5689,25 +5689,36 @@ window.agAuth = {
       '<div class="mama-title" style="font-size:13px;color:var(--text-primary)">'+esc(label)+' <span style="color:var(--text-muted);font-weight:600">'+cnt.done+'/'+cnt.total+'</span></div>'+body+'</div>';
   }
   function requiTrackingHtml(r, mode){
-    let out = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">'+
+    const stageCards = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">'+
       (mode === 'etage' ? requiStageCard(r,'cave','① Cave',true) : requiStageCard(r,'cave','① Cave'))+
       (mode === 'cave' ? '' : requiStageCard(r,'etage','② Réassort'))+'</div>';
+    let out = '';
     out += '<div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">';
     let lastLoc = null;
+    const cellBase = 'flex:1;min-width:0;border-radius:10px;border:2px solid var(--border-strong,#000);padding:6px;box-sizing:border-box;display:flex;flex-direction:column;align-items:stretch;gap:6px;color:#fff;';
     const stageCtl = function(p, i, stage, label){
       const m = p[stage];
       const ok = requiItemOk(p, stage);
       const bg = ok ? 'var(--text-success,#1F7A3D)' : 'var(--text-danger,#A32D2D)';
       const lab = (ok ? '✓ ' : '')+label;
-      const base = 'padding:8px 10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:'+bg+';color:#fff;font-size:12px;font-weight:800;min-width:74px;text-align:center;box-sizing:border-box';
       const qtyVal = m && m.qty != null ? String(m.qty) : '';
+      const who = m ? (m.by||'') : '';
+      const head = '<div style="font-size:12px;font-weight:800;text-align:center;line-height:1.2">'+esc(lab)+'</div>'+
+        (who ? '<div style="font-size:10px;text-align:center;opacity:.9;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(who)+'</div>' : '');
       if (mode === 'etage' && stage === 'cave'){
-        return '<span style="'+base+'">'+lab+(m ? ' : '+esc(qtyVal||p.quantity) : '')+'</span>';
+        return '<div style="'+cellBase+'background:'+bg+'">'+head+
+          '<div style="background:#fff;color:#1A1A1A;border-radius:6px;padding:7px 0;text-align:center;font-size:14px;font-weight:800">'+(m ? esc(qtyVal||p.quantity) : '—')+'</div></div>';
       }
-      return '<button onclick="appAction(\'toggleRequiCheck\',{id:\''+r.id+'\',idx:'+i+',stage:\''+stage+'\'})" style="'+base+';cursor:pointer">'+lab+'</button>'+
-        '<input type="text" inputmode="decimal" placeholder="Qté" value="'+esc(qtyVal)+'" onchange="appAction(\'setRequiQty\',{id:\''+r.id+'\',idx:'+i+',stage:\''+stage+'\',value:this.value})" style="width:56px;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px;text-align:center">';
+      return '<div style="'+cellBase+'background:'+bg+'">'+
+        '<div onclick="appAction(\'toggleRequiCheck\',{id:\''+r.id+'\',idx:'+i+',stage:\''+stage+'\'})" style="cursor:pointer">'+head+'</div>'+
+        '<input type="text" inputmode="decimal" placeholder="Qté" value="'+esc(qtyVal)+'" onchange="appAction(\'setRequiQty\',{id:\''+r.id+'\',idx:'+i+',stage:\''+stage+'\',value:this.value})" style="width:100%;box-sizing:border-box;padding:7px 4px;border-radius:6px;border:none;background:#fff;color:#1A1A1A;font-size:14px;font-weight:800;text-align:center">'+
+      '</div>';
     };
-    const askedPill = '<span style="padding:8px 10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-success,#1F7A3D);color:#fff;font-size:12px;font-weight:800;min-width:74px;text-align:center;box-sizing:border-box">✓ Demandé</span>';
+    const askedCell = function(p){
+      return '<div style="'+cellBase+'background:var(--text-success,#1F7A3D)">'+
+        '<div style="font-size:12px;font-weight:800;text-align:center;line-height:1.2">✓ Demandé</div>'+
+        '<div style="background:#fff;color:#1A1A1A;border-radius:6px;padding:7px 0;text-align:center;font-size:14px;font-weight:800">'+esc(p.quantity)+'</div></div>';
+    };
     (r.products||[]).forEach(function(p, i){
       if (p.location && p.location !== lastLoc){
         out += '<div class="mama-title" style="font-size:12px;color:var(--text-accent,#E8432B);margin-top:8px">'+esc(p.location)+'</div>';
@@ -5721,12 +5732,11 @@ window.agAuth = {
           (p.unit ? '<div style="font-size:11px;color:var(--text-muted)">'+esc(p.unit)+'</div>' : '')+'</div>'+
           '<div style="font-size:15px;font-weight:800;color:var(--text-accent,#E8432B);white-space:nowrap">× '+esc(p.quantity)+'</div>'+
         '</div>'+
-        '<div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">'+askedPill+stageCtl(p,i,'cave','Cave')+(mode === 'cave' ? '' : stageCtl(p,i,'etage','Réassort'))+
-          (who ? '<span style="font-size:11px;color:var(--text-muted)">'+esc(who)+'</span>' : '')+
-        '</div>'+
+        '<div style="display:flex;gap:8px;margin-top:8px;align-items:stretch">'+askedCell(p)+stageCtl(p,i,'cave','Cave')+(mode === 'cave' ? '' : stageCtl(p,i,'etage','Réassort'))+'</div>'+
       '</div>';
     });
     out += '</div>';
+    out += stageCards;
     return out;
   }
 
