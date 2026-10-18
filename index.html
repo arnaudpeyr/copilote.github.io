@@ -1150,6 +1150,10 @@ window.agAuth = {
     economeDay: null,
     economeReportId: null,
     followReqId: null,
+    followMode: 'cave',
+    requiHubFrom: null,
+    requiHubStep: 'menu',
+    requiViaHub: false,
     managerUnlocked: false,
     lockedFor: null,
     name: '',
@@ -2045,7 +2049,7 @@ window.agAuth = {
   }
 
   const SESSION_SNAPSHOT_KEY = 'copilote_session_snapshot';
-  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','agm','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','prestationDraftZoneOther','prestationDraftType','prestationDraftTypeOther','entertainmentEditingId','entFormDate','entFormType','entFormInfo','entFormPlace','cameFromManagerMenu'];
+  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','agm','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','prestationDraftZoneOther','prestationDraftType','prestationDraftTypeOther','entertainmentEditingId','entFormDate','entFormType','entFormInfo','entFormPlace','cameFromManagerMenu','requiHubFrom','requiHubStep','requiViaHub','followMode','categoryId','sublieuId'];
   function compressImageDataUrl(dataUrl, maxWidth, quality){
     return new Promise(function(resolve){
       try {
@@ -2088,6 +2092,12 @@ window.agAuth = {
       if (!wasLoggedIn) return false;
       SESSION_SNAPSHOT_FIELDS.forEach(function(f){ if (snap[f] !== undefined) state[f] = snap[f]; });
       // Recharge les données nécessaires pour que l'écran restauré (ex: modification d'une fiche) fonctionne bien.
+      // Le fil d'actu (accueil / What's up) a besoin des événements : on les recharge toujours à la restauration.
+      if (state.screen === 'home' || state.screen === 'whatsup'){
+        const evAll = await Promise.all([getEvents(), getEventSheets(), getRhEvents()]);
+        state.events = evAll[0]; state.eventSheets = evAll[1]; state.rhEvents = evAll[2];
+      }
+      if (state.economeUnlocked && String(state.screen).indexOf('econome-') === 0){ state.requisitions = await getRequisitions(); }
       if (state.screen === 'requi-follow'){ state.requisitions = await getRequisitions(); state.followReqId = null; }
       if (state.screen === 'events-form' && state.eventsUnlocked){
         state.eventSheets = await getEventSheets();
@@ -2537,7 +2547,9 @@ window.agAuth = {
         state.feedbackCounts = feedbackCounts;
         state.economeDay = null;
         state.economeReportId = null;
-        state.screen = 'econome-days';
+        state.requiHubFrom = 'econome';
+        state.requiHubStep = 'menu';
+        state.screen = 'requi-hub';
       } else {
         state.economeLoginCodeError = true;
       }
@@ -2932,6 +2944,12 @@ window.agAuth = {
       state.eventSheets = eventSheets;
       state.rhEvents = rhEvents;
       state.screen = 'home'; render();
+    }
+    else if (action === 'openEconomeDays'){
+      state.requisitions = await getRequisitions();
+      state.economeDay = null; state.economeReportId = null;
+      state.screen = 'econome-days';
+      render();
     }
     else if (action === 'openEconomeDay'){
       state.economeDay = payload;
@@ -4255,8 +4273,39 @@ window.agAuth = {
       state.requisitionFridgeIndex = idx;
       render();
     }
+    else if (action === 'openRequiHub'){
+      if (payload) state.requiHubFrom = payload;
+      if (!state.requiHubFrom) state.requiHubFrom = state.economeUnlocked ? 'econome' : 'gang';
+      state.requiHubStep = 'menu';
+      state.requiViaHub = false;
+      state.followReqId = null;
+      state.screen = 'requi-hub';
+      render();
+    }
+    else if (action === 'requiHubForms'){
+      state.requiHubStep = 'forms';
+      state.screen = 'requi-hub';
+      render();
+    }
+    else if (action === 'requiHubBack'){
+      if (state.requiHubStep === 'forms'){ state.requiHubStep = 'menu'; state.screen = 'requi-hub'; render(); }
+      else if (state.requiHubFrom === 'econome'){ state.requiHubStep = 'menu'; state.screen = 'requi-hub'; render(); }
+      else { state.requiHubFrom = null; appAction('goHome'); }
+    }
+    else if (action === 'openRequiFormFromHub'){
+      state.structure = await getStructureRaw();
+      state.categoryId = payload.catId;
+      state.sublieuId = payload.subId;
+      state.requiViaHub = true;
+      state.requisitionSaved = false;
+      state.requisitionDraft = {};
+      state.requisitionFridgeIndex = 0;
+      state.screen = 'requisition-form';
+      render();
+    }
     else if (action === 'openRequiFollow'){
       state.requisitions = await getRequisitions();
+      state.followMode = payload || 'cave';
       state.followReqId = null;
       state.screen = 'requi-follow';
       render();
@@ -4270,8 +4319,18 @@ window.agAuth = {
       state.followReqId = null;
       render();
     }
-    else if (action === 'goRequiForm'){
-      state.screen = 'requisition-form';
+    else if (action === 'setRequiQty'){
+      const list = await getRequisitions();
+      const r = list.find(function(x){ return x.id === payload.id; });
+      if (!r) return;
+      const p = r.products[payload.idx];
+      if (!p) return;
+      const v = String(payload.value == null ? '' : payload.value).trim();
+      const who = state.name || (state.economeUnlocked ? 'Économe' : '');
+      const at = new Date().toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+      if (v === '') delete p[payload.stage]; else p[payload.stage] = { by: who, at: at, qty: v };
+      await window.storage.set('requisitions', JSON.stringify(list.slice(0,2000)), true);
+      state.requisitions = list;
       render();
     }
     else if (action === 'toggleRequiCheck' || action === 'validateRequiStage'){
@@ -4284,7 +4343,7 @@ window.agAuth = {
       if (action === 'toggleRequiCheck'){
         const p = r.products[payload.idx];
         if (!p) return;
-        if (p[payload.stage]) delete p[payload.stage]; else p[payload.stage] = { by: who, at: at };
+        if (p[payload.stage]) delete p[payload.stage]; else p[payload.stage] = { by: who, at: at, qty: String(p.quantity) };
       } else {
         r.validation = r.validation || {};
         r.validation[payload.stage] = { by: who, at: at };
@@ -4333,7 +4392,7 @@ window.agAuth = {
       const commentInput = document.getElementById('requisition-comment');
       await addRequisition({
         id: 'requi-'+Date.now(),
-        operator: state.name,
+        operator: state.name || (state.economeUnlocked ? 'Économe' : ''),
         categoryName: cat.name,
         sublieuName: sub.name,
         when: nowLabel(),
@@ -4857,6 +4916,14 @@ window.agAuth = {
           out += '<div style="padding:16px;color:var(--text-muted);font-size:14px">Aucun sous-lieu pour l\'instant. Ajoute-le depuis Admin.</div>';
         }
         cat.sublieux.forEach(function(sub){
+          if (sub.type === 'submenu' && sub.id === 'requi'){
+            out += '<div onclick="appAction(\'openRequiHub\',\'gang\')" style="display:flex;align-items:center;gap:12px;padding:14px;border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);cursor:pointer">'+
+              '<div style="width:28px;height:28px;border-radius:6px;background:var(--surface-0);color:var(--text-secondary);display:flex;align-items:center;justify-content:center">'+icon(sub.icon,16)+'</div>'+
+              '<div style="flex:1;font-size:14px;font-weight:500;letter-spacing:.2px">'+esc(sub.name.toUpperCase())+'</div>'+
+              icon('chevronRight',16)+
+            '</div>';
+            return;
+          }
           if (sub.type === 'submenu'){
             const subMenuOpen = state.expandedSubmenu === sub.id;
             out += '<div style="border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);overflow:hidden">';
@@ -4948,7 +5015,7 @@ window.agAuth = {
     const sub = findSublieu(state.categoryId, state.sublieuId);
     let out = '<div style="padding:20px 16px 8px">'+
       '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
-        '<div onclick="appAction(\'goHome\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<div onclick="appAction(\''+(state.requiViaHub ? 'requiHubForms' : 'goHome')+'\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
         '<div style="width:32px;height:32px;border-radius:8px;background:var(--bg-accent,#E6F1FB);color:var(--text-accent,#185FA5);display:flex;align-items:center;justify-content:center">'+icon('archive',18)+'</div>'+
         '<div style="flex:1"><div style="font-size:16px;font-weight:500;color:var(--text-primary)">'+esc(sub.name)+'</div>'+
         '<div style="font-size:13px;color:var(--text-secondary)">Vérifié par '+esc(state.name)+'</div></div>'+
@@ -5076,7 +5143,7 @@ window.agAuth = {
         '<div onclick="appAction(\'goHome\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
         '<div style="width:32px;height:32px;border-radius:8px;background:var(--bg-accent,#E6F1FB);color:var(--text-accent,#185FA5);display:flex;align-items:center;justify-content:center">'+icon('archive',18)+'</div>'+
         '<div style="flex:1"><div style="font-size:16px;font-weight:500;color:var(--text-primary)">'+esc(sub.name)+'</div>'+
-        '<div style="font-size:13px;color:var(--text-secondary)">Demandé par '+esc(state.name)+'</div></div>'+
+        '<div style="font-size:13px;color:var(--text-secondary)">Demandé par '+esc(state.name || (state.economeUnlocked ? 'Économe' : ''))+'</div></div>'+
       '</div>'+
     '</div>';
 
@@ -5086,7 +5153,6 @@ window.agAuth = {
     }
 
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
-    out += '<button onclick="appAction(\'openRequiFollow\')" style="width:100%;padding:12px;border-radius:10px;font-size:13px;font-weight:800;text-transform:uppercase;cursor:pointer;border:2.5px solid var(--border-strong,#000);box-shadow:3px 3px 0 var(--border-strong,#000);background:var(--bg-accent,#FFD500);color:var(--text-primary)">Suivi des réquis</button>';
 
     if (isRich){
       const locations = getRequisitionLocations(sub);
@@ -5132,7 +5198,7 @@ window.agAuth = {
     out += '<button onclick="appAction(\'saveRequisition\')" style="width:100%;padding:16px;border-radius:10px;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;border:2.5px solid var(--border-strong,#000);box-shadow:3px 3px 0 var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;margin-top:4px">Valider la réqui</button>';
     out += '</div>';
 
-    out += bottomNav('home');
+    if (!(state.economeUnlocked && state.requiHubFrom === 'econome')) out += bottomNav('home');
     return out;
   }
 
@@ -5225,7 +5291,7 @@ window.agAuth = {
       '<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000)">'+
       '<div style="display:flex;align-items:center;gap:10px">'+
         '<img src="'+LOGO_URI+'" alt="Mama Shelter Toulouse" style="width:36px;height:36px;border-radius:50%;border:2px solid var(--border-strong,#000);object-fit:cover;flex-shrink:0">'+
-        '<div><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">Rapports Réqui</h1>'+
+        '<div><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">Réqui</h1>'+
         '<p style="color:var(--text-secondary);margin:2px 0 0;font-size:13px">Accès économe</p></div>'+
       '</div>'+
       '<button onclick="appAction(\'logout\')" style="display:flex;align-items:center;gap:6px;border:2px solid var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer;padding:8px 12px;border-radius:8px">'+icon('home',16)+'<span>Accueil</span></button>'+
@@ -5522,6 +5588,7 @@ window.agAuth = {
 
   function screenEconomeDays(){
     let out = economeHeader();
+    out += '<div style="padding:0 16px"><div onclick="appAction(\'openRequiHub\',\'econome\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;margin:4px 0 6px;font-size:14px">'+icon('back',18)+'<span>Menu réqui</span></div></div>';
     const days = Array.from(new Set((state.requisitions||[]).map(function(r){ return r.dayKey; }))).sort().reverse();
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
     if (days.length === 0){
@@ -5563,10 +5630,19 @@ window.agAuth = {
   }
 
   // ===== Suivi d'une réqui : étape « Cave » (préparation) puis « Étage » (réception) =====
+  // Un produit est « ok » à une étape s'il est coché et que la quantité saisie couvre la quantité demandée.
+  function requiItemOk(p, stage){
+    const m = p[stage];
+    if (!m) return false;
+    const q = parseFloat(String(m.qty == null ? '' : m.qty).replace(',', '.'));
+    const asked = parseFloat(String(p.quantity == null ? '' : p.quantity).replace(',', '.'));
+    if (isFinite(q) && isFinite(asked) && q < asked) return false;
+    return true;
+  }
   function requiStageCounts(r, stage){
     const prods = r.products || [];
     let done = 0;
-    prods.forEach(function(p){ if (p[stage]) done++; });
+    prods.forEach(function(p){ if (requiItemOk(p, stage)) done++; });
     return { done: done, total: prods.length, missing: prods.length - done };
   }
   function requiStageValidated(r, stage){ return !!(r.validation && r.validation[stage]); }
@@ -5585,7 +5661,7 @@ window.agAuth = {
     const fg = (st.red || st.ok) ? '#fff' : 'var(--text-primary)';
     return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;border:1.5px solid var(--border-strong,#000);background:'+bg+';color:'+fg+';font-size:11px;font-weight:800;white-space:nowrap">'+esc(st.t)+'</span>';
   }
-  function requiStageCard(r, stage, label){
+  function requiStageCard(r, stage, label, readonly){
     const cnt = requiStageCounts(r, stage);
     const val = r.validation && r.validation[stage];
     const incomplete = requiStageIncomplete(r, stage);
@@ -5597,20 +5673,32 @@ window.agAuth = {
       } else {
         body += '<div style="margin-top:6px;font-size:12px;font-weight:800;color:var(--text-success,#1F7A3D)">✓ Complet</div>';
       }
+    } else if (readonly){
+      body += '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">Pas encore validée</div>';
     } else {
       body += '<button onclick="appAction(\'validateRequiStage\',{id:\''+r.id+'\',stage:\''+stage+'\'})" style="margin-top:8px;width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:13px;font-weight:800;text-transform:uppercase;box-shadow:2px 2px 0 var(--border-strong,#000);cursor:pointer">Valider '+(stage==='cave'?'la cave':'le réassort')+'</button>';
     }
     return '<div style="flex:1;min-width:140px;padding:12px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1)">'+
       '<div class="mama-title" style="font-size:13px;color:var(--text-primary)">'+esc(label)+' <span style="color:var(--text-muted);font-weight:600">'+cnt.done+'/'+cnt.total+'</span></div>'+body+'</div>';
   }
-  function requiTrackingHtml(r){
+  function requiTrackingHtml(r, mode){
     let out = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">'+
-      requiStageCard(r,'cave','① Cave')+requiStageCard(r,'etage','② Réassort')+'</div>';
+      (mode === 'etage' ? requiStageCard(r,'cave','① Cave',true) : requiStageCard(r,'cave','① Cave'))+
+      (mode === 'cave' ? '' : requiStageCard(r,'etage','② Réassort'))+'</div>';
     out += '<div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">';
     let lastLoc = null;
-    const pill = function(p, i, stage, label){
+    const stageCtl = function(p, i, stage, label){
       const m = p[stage];
-      return '<button onclick="appAction(\'toggleRequiCheck\',{id:\''+r.id+'\',idx:'+i+',stage:\''+stage+'\'})" style="padding:8px 10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:'+(m?'var(--text-success,#1F7A3D)':'var(--text-danger,#A32D2D)')+';color:#fff;font-size:12px;font-weight:800;cursor:pointer;min-width:74px">'+(m?'✓ ':'')+label+'</button>';
+      const ok = requiItemOk(p, stage);
+      const bg = ok ? 'var(--text-success,#1F7A3D)' : 'var(--text-danger,#A32D2D)';
+      const lab = (ok ? '✓ ' : '')+label;
+      const base = 'padding:8px 10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:'+bg+';color:#fff;font-size:12px;font-weight:800;min-width:74px;text-align:center;box-sizing:border-box';
+      const qtyVal = m && m.qty != null ? String(m.qty) : '';
+      if (mode === 'etage' && stage === 'cave'){
+        return '<span style="'+base+'">'+lab+(m ? ' : '+esc(qtyVal||p.quantity) : '')+'</span>';
+      }
+      return '<button onclick="appAction(\'toggleRequiCheck\',{id:\''+r.id+'\',idx:'+i+',stage:\''+stage+'\'})" style="'+base+';cursor:pointer">'+lab+'</button>'+
+        '<input type="text" inputmode="decimal" placeholder="Qté" value="'+esc(qtyVal)+'" onchange="appAction(\'setRequiQty\',{id:\''+r.id+'\',idx:'+i+',stage:\''+stage+'\',value:this.value})" style="width:56px;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px;text-align:center">';
     };
     const askedPill = '<span style="padding:8px 10px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-success,#1F7A3D);color:#fff;font-size:12px;font-weight:800;min-width:74px;text-align:center;box-sizing:border-box">✓ Demandé</span>';
     (r.products||[]).forEach(function(p, i){
@@ -5618,7 +5706,7 @@ window.agAuth = {
         out += '<div class="mama-title" style="font-size:12px;color:var(--text-accent,#E8432B);margin-top:8px">'+esc(p.location)+'</div>';
         lastLoc = p.location;
       }
-      const miss = (requiStageValidated(r,'cave') && !p.cave) || (requiStageValidated(r,'etage') && !p.etage);
+      const miss = (requiStageValidated(r,'cave') && !requiItemOk(p,'cave')) || (requiStageValidated(r,'etage') && !requiItemOk(p,'etage'));
       const who = [p.cave ? 'Cave : '+(p.cave.by||'') : '', p.etage ? 'Réassort : '+(p.etage.by||'') : ''].filter(Boolean).join(' · ');
       out += '<div style="padding:10px 12px;border:2px solid '+(miss?'var(--text-danger,#A32D2D)':'var(--border-strong,var(--border))')+';border-radius:10px;background:'+(miss?'rgba(163,45,45,.10)':'var(--surface-1)')+'">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'+
@@ -5626,7 +5714,7 @@ window.agAuth = {
           (p.unit ? '<div style="font-size:11px;color:var(--text-muted)">'+esc(p.unit)+'</div>' : '')+'</div>'+
           '<div style="font-size:15px;font-weight:800;color:var(--text-accent,#E8432B);white-space:nowrap">× '+esc(p.quantity)+'</div>'+
         '</div>'+
-        '<div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">'+askedPill+pill(p,i,'cave','Cave')+pill(p,i,'etage','Réassort')+
+        '<div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">'+askedPill+stageCtl(p,i,'cave','Cave')+(mode === 'cave' ? '' : stageCtl(p,i,'etage','Réassort'))+
           (who ? '<span style="font-size:11px;color:var(--text-muted)">'+esc(who)+'</span>' : '')+
         '</div>'+
       '</div>';
@@ -5635,14 +5723,54 @@ window.agAuth = {
     return out;
   }
 
-  function screenRequiFollow(){
-    const back = state.followReqId ? "appAction('backRequiFollow')" : "appAction('goRequiForm')";
-    let out = '<div style="padding:20px 16px 8px">'+
+  function requiHubHeader(title, sub, backAction){
+    if (state.requiHubFrom === 'econome' && !backAction) return economeHeader();
+    return '<div style="padding:20px 16px 8px">'+
       '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
-        '<div onclick="'+back+'" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
-        '<div style="flex:1"><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">Suivi des réquis</h1>'+
-        '<p style="color:var(--text-secondary);margin:2px 0 0;font-size:13px">Demandé → Cave → Réassort</p></div>'+
+        '<div onclick="'+(backAction||"appAction('requiHubBack')")+'" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<div style="flex:1"><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">'+esc(title)+'</h1>'+
+        (sub ? '<p style="color:var(--text-secondary);margin:2px 0 0;font-size:13px">'+esc(sub)+'</p>' : '')+'</div>'+
       '</div></div>';
+  }
+  function requiBigCard(onclick, ic, label, sub){
+    return '<div onclick="'+onclick+'" style="display:flex;align-items:center;gap:14px;padding:18px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:14px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">'+
+      '<div style="width:40px;height:40px;border-radius:10px;border:2px solid var(--border-strong,#000);background:var(--bg-accent,#FFD500);color:var(--text-primary);display:flex;align-items:center;justify-content:center">'+icon(ic,20)+'</div>'+
+      '<div style="flex:1"><div class="mama-title" style="font-size:16px;color:var(--text-primary)">'+esc(label)+'</div>'+
+      (sub ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+esc(sub)+'</div>' : '')+'</div>'+
+      icon('chevronRight',18)+'</div>';
+  }
+
+  function screenRequiHub(){
+    const fromEcon = state.requiHubFrom === 'econome';
+    let out;
+    if (state.requiHubStep === 'forms'){
+      out = requiHubHeader('Faire une réqui', 'Quelle zone ?', "appAction('requiHubBack')");
+      const bar = state.structure && state.structure.categories.find(function(c){ return c.id === 'bar'; });
+      const requi = bar && bar.sublieux.find(function(x){ return x.id === 'requi'; });
+      out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+      ((requi && requi.sublieux) || []).forEach(function(n){
+        out += requiBigCard("appAction('openRequiFormFromHub',{catId:'bar',subId:'"+n.id+"'})", 'archive', n.name, '');
+      });
+      out += '</div>';
+    } else {
+      out = fromEcon ? economeHeader() : requiHubHeader('Réqui', 'Bar');
+      out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:12px">'+
+        requiBigCard("appAction('requiHubForms')", 'edit', 'Faire une réqui', 'Demander des produits (RDC ou Roof)')+
+        requiBigCard("appAction('openRequiFollow','cave')", 'archive', 'Préparer une réqui', 'Cave : cocher ce qui est monté')+
+        requiBigCard("appAction('openRequiFollow','etage')", 'check', 'Réassortir le BEV', 'Bar : cocher ce qui est rangé')+
+        (fromEcon ? requiBigCard("appAction('openEconomeDays')", 'event', 'Rapports', 'Historique, CSV, PDF') : '')+
+      '</div>';
+    }
+    if (!fromEcon) out += bottomNav('home');
+    return out;
+  }
+
+  function screenRequiFollow(){
+    const mode = state.followMode === 'etage' ? 'etage' : 'cave';
+    const title = mode === 'cave' ? 'Préparer une réqui' : 'Réassortir le BEV';
+    const subtitle = mode === 'cave' ? 'Cave : coche ce qui est monté' : 'Bar : coche ce qui est rangé';
+    const back = state.followReqId ? "appAction('backRequiFollow')" : "appAction('openRequiHub')";
+    let out = requiHubHeader(title, subtitle, back);
     const list = state.requisitions || [];
     const r = state.followReqId ? list.find(function(x){ return x.id === state.followReqId; }) : null;
     out += '<div style="padding:8px 16px">';
@@ -5652,21 +5780,20 @@ window.agAuth = {
         '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">Par '+esc(r.operator)+' · '+esc(r.when)+'</div>'+
         (r.comment ? '<div style="font-size:13px;margin-top:10px;padding:8px;border-radius:8px;background:var(--surface-0)">'+esc(r.comment)+'</div>' : '')+
       '</div>';
-      out += requiTrackingHtml(r);
+      out += requiTrackingHtml(r, mode);
     } else {
-      const today = dayKeyOf(new Date());
-      const y = new Date(); y.setDate(y.getDate()-1);
-      const days = [today, dayKeyOf(y)];
-      const week = []; for (let k=2;k<=7;k++){ const d=new Date(); d.setDate(d.getDate()-k); week.push(dayKeyOf(d)); }
-      const recent = list.filter(function(x){
-        if (days.indexOf(x.dayKey) >= 0) return true;
-        // une réqui plus ancienne reste visible tant que le réassort n'est pas validé
-        return week.indexOf(x.dayKey) >= 0 && !requiStageValidated(x,'etage');
+      const keys = []; for (let k=0;k<=7;k++){ const d=new Date(); d.setDate(d.getDate()-k); keys.push(dayKeyOf(d)); }
+      const stage = mode;
+      const recent = list.filter(function(x){ return keys.indexOf(x.dayKey) >= 0; });
+      // à traiter d'abord (étape non validée), puis les déjà traitées
+      recent.sort(function(a,b){
+        const pa = requiStageValidated(a,stage) ? 1 : 0, pb = requiStageValidated(b,stage) ? 1 : 0;
+        return pa - pb;
       });
       if (!recent.length) out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucune réqui récente.</div>';
       out += '<div style="display:flex;flex-direction:column;gap:10px">';
       recent.forEach(function(x){
-        out += '<div onclick="appAction(\'openRequiFollowItem\',\''+x.id+'\')" style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px">'+
+        out += '<div onclick="appAction(\'openRequiFollowItem\',\''+x.id+'\')" style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;'+(requiStageValidated(x,stage)?'opacity:.7':'')+'">'+
           '<div style="min-width:0"><div style="font-size:15px;font-weight:600;color:var(--text-primary)">'+esc(x.sublieuName)+'</div>'+
           '<div style="font-size:12px;color:var(--text-secondary);margin:2px 0 6px">Par '+esc(x.operator)+' · '+esc(x.when)+'</div>'+requiStatusBadge(x)+'</div>'+
           icon('chevronRight',18)+'</div>';
@@ -5674,7 +5801,7 @@ window.agAuth = {
       out += '</div>';
     }
     out += '</div>';
-    out += bottomNav('home');
+    if (state.requiHubFrom !== 'econome') out += bottomNav('home');
     return out;
   }
 
@@ -6245,11 +6372,11 @@ window.agAuth = {
               '<div style="color:'+(inc?'var(--text-danger,#A32D2D)':'var(--text-secondary)')+';margin-top:2px;font-weight:'+(inc?'800':'400')+'">'+(v ? (inc?'⚠ Incomplet · ':'✓ ')+esc(v.by||'')+(v.at?' · '+esc(v.at):'') : 'Non validée')+'</div></div>';
           }).join('')+'</div>';
         (rq.products||[]).forEach(function(pr){
-          const missH = (requiStageValidated(rq,'cave') && !pr.cave) || (requiStageValidated(rq,'etage') && !pr.etage);
+          const missH = (requiStageValidated(rq,'cave') && !requiItemOk(pr,'cave')) || (requiStageValidated(rq,'etage') && !requiItemOk(pr,'etage'));
           out += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:2px solid '+(missH?'var(--text-danger,#A32D2D)':'var(--border-strong,var(--border))')+';border-radius:10px;background:'+(missH?'rgba(163,45,45,.10)':'var(--surface-1)')+'">'+
             '<div style="min-width:0"><div style="font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(pr.name)+'</div>'+
             (pr.location ? '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">'+esc(pr.location)+'</div>' : '')+
-            '<div style="font-size:11px;margin-top:2px;color:'+(missH?'var(--text-danger,#A32D2D)':'var(--text-muted)')+'">Demandé ✓ · Cave '+(pr.cave?'✓':'—')+' · Réassort '+(pr.etage?'✓':'—')+'</div></div>'+
+            '<div style="font-size:11px;margin-top:2px;color:'+(missH?'var(--text-danger,#A32D2D)':'var(--text-muted)')+'">Demandé ✓ · Cave '+(pr.cave?(requiItemOk(pr,'cave')?'✓ ':'⚠ ')+esc(pr.cave.qty!=null?pr.cave.qty:''):'—')+' · Réassort '+(pr.etage?(requiItemOk(pr,'etage')?'✓ ':'⚠ ')+esc(pr.etage.qty!=null?pr.etage.qty:''):'—')+'</div></div>'+
             '<div style="font-size:14px;font-weight:700;color:var(--text-accent,#E8432B);white-space:nowrap">'+esc(pr.quantity)+(pr.unit ? ' '+esc(pr.unit) : '')+'</div>'+
           '</div>';
         });
@@ -7066,6 +7193,7 @@ window.agAuth = {
     else if (state.screen === 'tracabilite-form') html = screenTracabiliteForm();
     else if (state.screen === 'requisition-form') html = screenRequisitionForm();
     else if (state.screen === 'requi-follow') html = screenRequiFollow();
+    else if (state.screen === 'requi-hub') html = screenRequiHub();
     else if (state.screen === 'manager-locked') html = screenManagerLocked();
     else if (state.screen === 'other-access-menu') html = screenOtherAccessMenu();
     else if (state.screen === 'access-management') html = screenAccessManagement();
