@@ -1151,6 +1151,9 @@ window.agAuth = {
     economeReportId: null,
     followReqId: null,
     followMode: 'cave',
+    barMessages: [],
+    barMessageUsers: [],
+    barMessageError: '',
     suiviFrom: 'econome',
     requiHubFrom: null,
     requiHubStep: 'menu',
@@ -1811,6 +1814,17 @@ window.agAuth = {
       return [];
     }
   }
+  // Messages entre barmen. Lecture stricte : seule l'absence de la clé donne une liste vide,
+  // une vraie erreur de lecture est remontée pour ne jamais écraser les messages existants.
+  async function getBarMessages(strict){
+    try {
+      const res = await window.storage.get('barMessages', true);
+      return JSON.parse(res.value);
+    } catch(e){
+      if (strict && !(e && /not found/i.test(String(e.message||e)))) throw e;
+      return [];
+    }
+  }
   async function getBarRecettes(){
     try {
       const res = await window.storage.get('barRecettes', true);
@@ -2099,6 +2113,7 @@ window.agAuth = {
         state.events = evAll[0]; state.eventSheets = evAll[1]; state.rhEvents = evAll[2];
       }
       if (String(state.screen).indexOf('econome-') === 0){ state.requisitions = await getRequisitions(); }
+      if (state.screen === 'bar-messages'){ try { state.barMessages = await getBarMessages(false); const g = await getMamaGangUsers(); state.barMessageUsers = g.filter(function(u){ return u.poste === 'bar'; }).map(function(u){ return u.name; }); } catch(e){} }
       if (state.screen === 'requi-follow'){ state.requisitions = await getRequisitions(); state.followReqId = null; }
       if (state.screen === 'events-form' && state.eventsUnlocked){
         state.eventSheets = await getEventSheets();
@@ -4275,6 +4290,32 @@ window.agAuth = {
       state.requisitionFridgeIndex = idx;
       render();
     }
+    else if (action === 'openBarMessages'){
+      state.barMessageError = '';
+      const [msgs, gang] = await Promise.all([getBarMessages(false), getMamaGangUsers()]);
+      state.barMessages = msgs;
+      let names = gang.filter(function(u){ return u.poste === 'bar'; }).map(function(u){ return u.name; });
+      if (!names.length) names = gang.map(function(u){ return u.name; });
+      state.barMessageUsers = names.filter(function(n, i){ return n && names.indexOf(n) === i; }).sort();
+      state.screen = 'bar-messages';
+      render();
+    }
+    else if (action === 'sendBarMessage'){
+      const to = document.getElementById('bm-to'), tx = document.getElementById('bm-text');
+      const text = tx ? tx.value.trim() : '';
+      if (!text){ state.barMessageError = 'Écris ton message avant d\'envoyer.'; render(); return; }
+      try {
+        const list = await getBarMessages(true);
+        const now = new Date();
+        list.unshift({ id:'bm-'+now.getTime(), from: state.name || 'Équipe', to: to ? to.value : 'Toute l\'équipe', text: text, ts: now.getTime(), when: nowLabel() });
+        await window.storage.set('barMessages', JSON.stringify(list.slice(0,300)), true);
+        state.barMessages = list;
+        state.barMessageError = '';
+      } catch(e){
+        state.barMessageError = 'Envoi impossible pour le moment, réessaie.';
+      }
+      render();
+    }
     else if (action === 'openRequiHub'){
       if (payload) state.requiHubFrom = payload;
       if (!state.requiHubFrom) state.requiHubFrom = state.economeUnlocked ? 'econome' : 'gang';
@@ -4916,6 +4957,13 @@ window.agAuth = {
         out += '<div style="border-top:1px solid var(--border);padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--surface-0)">';
         if (cat.sublieux.length === 0){
           out += '<div style="padding:16px;color:var(--text-muted);font-size:14px">Aucun sous-lieu pour l\'instant. Ajoute-le depuis Admin.</div>';
+        }
+        if (cat.id === 'bar'){
+          out += '<div onclick="appAction(\'openBarMessages\')" style="display:flex;align-items:center;gap:12px;padding:14px;border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--bg-accent,#FFD500);cursor:pointer">'+
+            '<div style="width:28px;height:28px;border-radius:6px;background:#fff;color:var(--text-primary);display:flex;align-items:center;justify-content:center">'+icon('edit',16)+'</div>'+
+            '<div style="flex:1;font-size:14px;font-weight:700;letter-spacing:.2px;color:var(--text-primary)">MESSAGES DE L\'ÉQUIPE</div>'+
+            icon('chevronRight',16)+
+          '</div>';
         }
         cat.sublieux.forEach(function(sub){
           if (sub.type === 'submenu' && sub.id === 'requi'){
@@ -5782,6 +5830,35 @@ window.agAuth = {
     return out;
   }
 
+  function screenBarMessages(){
+    let out = requiHubHeader('Messages du bar', 'Pour se laisser des infos entre barmen', "appAction('goHome')");
+    const users = (state.barMessageUsers || []);
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    out += '<div style="padding:14px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;flex-direction:column;gap:8px">'+
+      '<div class="mama-title" style="font-size:14px;color:var(--text-primary)">Nouveau message</div>'+
+      '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Pour qui ?</label>'+
+      '<select id="bm-to" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
+        '<option value="Toute l\'équipe">Toute l\'équipe</option>'+
+        users.map(function(u){ return '<option value="'+esc(u)+'">'+esc(u)+'</option>'; }).join('')+
+      '</select>'+
+      '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Quoi ?</label>'+
+      '<textarea id="bm-text" placeholder="Ton message…" style="width:100%;box-sizing:border-box;min-height:80px;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px;font-family:inherit;resize:vertical"></textarea>'+
+      (state.barMessageError ? '<div style="color:var(--text-danger,#A32D2D);font-size:13px">'+esc(state.barMessageError)+'</div>' : '')+
+      '<button onclick="appAction(\'sendBarMessage\')" style="width:100%;padding:14px;border-radius:10px;font-size:14px;font-weight:800;text-transform:uppercase;cursor:pointer;border:2.5px solid var(--border-strong,#000);box-shadow:3px 3px 0 var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff">Envoyer</button>'+
+    '</div>';
+    const list = (state.barMessages || []).slice().sort(function(a,b){ return (b.ts||0) - (a.ts||0); });
+    if (!list.length) out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucun message pour l\'instant.</div>';
+    list.forEach(function(m){
+      out += '<div style="padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1)">'+
+        '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--text-muted)"><span>De <b style="color:var(--text-primary)">'+esc(m.from||'?')+'</b> → <b style="color:var(--text-accent,#E8432B)">'+esc(m.to||'')+'</b></span><span>'+esc(m.when||'')+'</span></div>'+
+        '<div style="font-size:14px;color:var(--text-primary);margin-top:6px;white-space:pre-wrap">'+esc(m.text)+'</div>'+
+      '</div>';
+    });
+    out += '</div>';
+    out += bottomNav('home');
+    return out;
+  }
+
   function screenRequiFollow(){
     const mode = state.followMode === 'etage' ? 'etage' : 'cave';
     const title = mode === 'cave' ? 'Préparer une réqui' : 'Réassortir le BEV';
@@ -6120,7 +6197,6 @@ window.agAuth = {
     const options = [
       { action:'goProcessInfosRead', icon:'edit', color:'#7A5FE0', fg:'#fff', label:'Process & Infos' },
       { action:'goFermeture', icon:'door', color:'#2AB0C5', fg:'#fff', label:'Fermer un floor' },
-      { action:'openEconomeDays', payload:'manager', icon:'archive', color:'#2AB0C5', fg:'#fff', label:'Suivre une réqui' },
       { action:'goAdmin', icon:'settings', color:'#FFD500', label:'Modifier une checklist' },
       { action:'goHistorique', icon:'clock', color:'#E8432B', fg:'#fff', label:"Voir l'historique des rapports" },
       { action:'goManagerPlanning', icon:'event', color:'#FF8AB4', label:"Publier le planning" },
@@ -7210,6 +7286,7 @@ window.agAuth = {
     else if (state.screen === 'requisition-form') html = screenRequisitionForm();
     else if (state.screen === 'requi-follow') html = screenRequiFollow();
     else if (state.screen === 'requi-hub') html = screenRequiHub();
+    else if (state.screen === 'bar-messages') html = screenBarMessages();
     else if (state.screen === 'manager-locked') html = screenManagerLocked();
     else if (state.screen === 'other-access-menu') html = screenOtherAccessMenu();
     else if (state.screen === 'access-management') html = screenAccessManagement();
