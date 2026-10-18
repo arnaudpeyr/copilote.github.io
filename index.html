@@ -1151,6 +1151,7 @@ window.agAuth = {
     economeReportId: null,
     followReqId: null,
     followMode: 'cave',
+    suiviFrom: 'econome',
     requiHubFrom: null,
     requiHubStep: 'menu',
     requiViaHub: false,
@@ -2049,7 +2050,7 @@ window.agAuth = {
   }
 
   const SESSION_SNAPSHOT_KEY = 'copilote_session_snapshot';
-  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','agm','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','prestationDraftZoneOther','prestationDraftType','prestationDraftTypeOther','entertainmentEditingId','entFormDate','entFormType','entFormInfo','entFormPlace','cameFromManagerMenu','requiHubFrom','requiHubStep','requiViaHub','followMode','categoryId','sublieuId'];
+  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','agm','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','prestationDraftZoneOther','prestationDraftType','prestationDraftTypeOther','entertainmentEditingId','entFormDate','entFormType','entFormInfo','entFormPlace','cameFromManagerMenu','suiviFrom','requiHubFrom','requiHubStep','requiViaHub','followMode','categoryId','sublieuId'];
   function compressImageDataUrl(dataUrl, maxWidth, quality){
     return new Promise(function(resolve){
       try {
@@ -2097,7 +2098,7 @@ window.agAuth = {
         const evAll = await Promise.all([getEvents(), getEventSheets(), getRhEvents()]);
         state.events = evAll[0]; state.eventSheets = evAll[1]; state.rhEvents = evAll[2];
       }
-      if (state.economeUnlocked && String(state.screen).indexOf('econome-') === 0){ state.requisitions = await getRequisitions(); }
+      if (String(state.screen).indexOf('econome-') === 0){ state.requisitions = await getRequisitions(); }
       if (state.screen === 'requi-follow'){ state.requisitions = await getRequisitions(); state.followReqId = null; }
       if (state.screen === 'events-form' && state.eventsUnlocked){
         state.eventSheets = await getEventSheets();
@@ -2946,6 +2947,7 @@ window.agAuth = {
       state.screen = 'home'; render();
     }
     else if (action === 'openEconomeDays'){
+      state.suiviFrom = payload === 'manager' ? 'manager' : 'econome';
       state.requisitions = await getRequisitions();
       state.economeDay = null; state.economeReportId = null;
       state.screen = 'econome-days';
@@ -5586,9 +5588,14 @@ window.agAuth = {
     return out;
   }
 
+  function suiviHeader(){
+    if (state.suiviFrom === 'manager') return requiHubHeader('Suivre une réqui', 'Toutes les réquis', "appAction('goManagerMenu')");
+    return economeHeader();
+  }
+
   function screenEconomeDays(){
-    let out = economeHeader();
-    out += '<div style="padding:0 16px"><div onclick="appAction(\'openRequiHub\',\'econome\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;margin:4px 0 6px;font-size:14px">'+icon('back',18)+'<span>Menu réqui</span></div></div>';
+    let out = suiviHeader();
+ if (state.suiviFrom !== 'manager') out += '<div style="padding:0 16px"><div onclick="appAction(\'openRequiHub\',\'econome\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;margin:4px 0 6px;font-size:14px">'+icon('back',18)+'<span>Menu réqui</span></div></div>';
     const days = Array.from(new Set((state.requisitions||[]).map(function(r){ return r.dayKey; }))).sort().reverse();
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
     if (days.length === 0){
@@ -5609,7 +5616,7 @@ window.agAuth = {
   }
 
   function screenEconomeDayReports(){
-    let out = economeHeader();
+    let out = suiviHeader();
     const reports = (state.requisitions||[]).filter(function(r){ return r.dayKey === state.economeDay; });
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
     out += '<div onclick="appAction(\'backEconomeDays\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;margin-bottom:4px;font-size:14px">'+icon('back',18)+'<span>Retour aux jours</span></div>';
@@ -5758,7 +5765,7 @@ window.agAuth = {
         requiBigCard("appAction('requiHubForms')", 'edit', 'Faire une réqui', 'Demander des produits (RDC ou Roof)')+
         requiBigCard("appAction('openRequiFollow','cave')", 'archive', 'Préparer une réqui', 'Cave : cocher ce qui est monté')+
         requiBigCard("appAction('openRequiFollow','etage')", 'check', 'Réassortir le BEV', 'Bar : cocher ce qui est rangé')+
-        (fromEcon ? requiBigCard("appAction('openEconomeDays')", 'event', 'Rapports', 'Historique, CSV, PDF') : '')+
+        (fromEcon ? requiBigCard("appAction('openEconomeDays','econome')", 'event', 'Suivre une réqui', 'Statut, historique, CSV, PDF') : '')+
       '</div>';
     }
     if (!fromEcon) out += bottomNav('home');
@@ -5811,7 +5818,7 @@ window.agAuth = {
       state.economeReportId = null;
       return screenEconomeDayReports();
     }
-    let out = economeHeader();
+    let out = suiviHeader();
     out += '<div style="padding:8px 16px" class="no-print">';
     out += '<div onclick="appAction(\'backEconomeReports\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;margin-bottom:10px;font-size:14px">'+icon('back',18)+'<span>Retour</span></div>';
     out += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">'+
@@ -6103,6 +6110,7 @@ window.agAuth = {
     const options = [
       { action:'goProcessInfosRead', icon:'edit', color:'#7A5FE0', fg:'#fff', label:'Process & Infos' },
       { action:'goFermeture', icon:'door', color:'#2AB0C5', fg:'#fff', label:'Fermer un floor' },
+      { action:'openEconomeDays', payload:'manager', icon:'archive', color:'#2AB0C5', fg:'#fff', label:'Suivre une réqui' },
       { action:'goAdmin', icon:'settings', color:'#FFD500', label:'Modifier une checklist' },
       { action:'goHistorique', icon:'clock', color:'#E8432B', fg:'#fff', label:"Voir l'historique des rapports" },
       { action:'goManagerPlanning', icon:'event', color:'#FF8AB4', label:"Publier le planning" },
@@ -6492,7 +6500,7 @@ window.agAuth = {
       const reports = state.historique.filter(function(h){ return h.categoryName === state.historiqueZone; }).map(function(h){ return { kind:'checklist', data:h }; });
       const tempReadings = (state.temperatures||[]).filter(function(t){ return t.categoryName === state.historiqueZone; }).map(function(t){ return { kind:'temperature', data:t }; });
       const tracaReadings = (state.tracabilite||[]).filter(function(t){ return t.categoryName === state.historiqueZone; }).map(function(t){ return { kind:'tracabilite', data:t }; });
-      const reqReadings = (state.requisitionsHist||[]).filter(function(t){ return t.categoryName === state.historiqueZone; }).map(function(t){ return { kind:'requisition', data:t }; });
+      const reqReadings = []; // les réquis ne sont plus dans l'historique : voir « Suivre une réqui »
       let all = reports.concat(tempReadings).concat(tracaReadings).concat(reqReadings);
       const tsOf = function(item){ const m = /-(\d{10,})/.exec(item.data.id || ''); return m ? +m[1] : 0; };
       all = all.map(function(item, i){ return { item:item, i:i }; }).sort(function(a, b){ return (tsOf(b.item) - tsOf(a.item)) || (a.i - b.i); }).map(function(x){ return x.item; });
@@ -6516,8 +6524,7 @@ window.agAuth = {
         {id:'checklists', label:'Checklists'},
         {id:'nettoyage', label:'Nettoyage'},
         {id:'temperature', label:'Température'},
-        {id:'tracabilite', label:'Traçabilité'},
-        {id:'requisition', label:'Réqui'}
+        {id:'tracabilite', label:'Traçabilité'}
       ];
       out += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">';
       filterOptions.forEach(function(f){
@@ -6555,8 +6562,7 @@ window.agAuth = {
     zoneNames.forEach(function(zoneName){
       const count = state.historique.filter(function(h){ return h.categoryName === zoneName; }).length
         + (state.temperatures||[]).filter(function(t){ return t.categoryName === zoneName; }).length
-        + (state.tracabilite||[]).filter(function(t){ return t.categoryName === zoneName; }).length
-        + (state.requisitionsHist||[]).filter(function(t){ return t.categoryName === zoneName; }).length;
+        + (state.tracabilite||[]).filter(function(t){ return t.categoryName === zoneName; }).length;
       out += '<div onclick="appAction(\'openHistoriqueZone\',\''+escJs(zoneName)+'\')" style="padding:16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:space-between">'+
         '<div class="mama-title" style="font-size:15px;color:var(--text-primary)">'+esc(zoneName)+'</div>'+
         '<div style="display:flex;align-items:center;gap:10px">'+
@@ -7225,9 +7231,9 @@ window.agAuth = {
     else if (state.screen === 'rh-list') html = screenRhList();
     else if (state.screen === 'rh-form') html = screenRhForm();
     else if (state.screen === 'manager-menu') html = screenManagerMenu();
-    else if (state.screen === 'econome-days') html = screenEconomeDays();
-    else if (state.screen === 'econome-day-reports') html = screenEconomeDayReports();
-    else if (state.screen === 'econome-report-detail') html = screenEconomeReportDetail();
+    else if (state.screen === 'econome-days') html = screenEconomeDays() + (state.suiviFrom === 'manager' ? bottomNav('menu') : '');
+    else if (state.screen === 'econome-day-reports') html = screenEconomeDayReports() + (state.suiviFrom === 'manager' ? bottomNav('menu') : '');
+    else if (state.screen === 'econome-report-detail') html = screenEconomeReportDetail() + (state.suiviFrom === 'manager' ? bottomNav('menu') : '');
     if (state.globalError){
       html = '<div style="margin:16px;padding:16px;border-radius:10px;background:#FDECEC;border:2px solid #A32D2D;color:#A32D2D;font-size:13px">'+
         '<strong>Erreur technique :</strong> '+esc(state.globalError)+
