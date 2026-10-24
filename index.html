@@ -86,6 +86,12 @@ window.agAuth = {
   async signIn(email, password){ const r = await supabaseClient.auth.signInWithPassword({ email: email, password: password }); if (r.error) throw r.error; return r.data.user.email; },
   async signOut(){ await supabaseClient.auth.signOut(); }
 };
+// Appels de fonctions serveur (vérification des codes, gestion des accès)
+window.appRpc = async function(fn, args){
+  const r = await supabaseClient.rpc(fn, args || {});
+  if (r.error) throw r.error;
+  return r.data;
+};
 </script>
 <script>
 (function(){
@@ -1804,6 +1810,65 @@ window.agAuth = {
   async function saveFeedbacks(list){
     await window.storage.set('feedbacks', JSON.stringify(list), true);
   }
+  // ===== Accès : vérification des codes côté serveur (fonction Supabase), plus aucun code dans l'app =====
+  async function serverLogin(role, code, name){
+    state.loginErrText = '';
+    if (window.appRpc){
+      try {
+        const r = await window.appRpc('app_login', { p_role: role, p_code: code, p_name: name || null });
+        if (r && r.ok) return { ok:true, id:r.id, name:r.name || '', poste:r.poste || null };
+        if (r && r.locked){ state.loginErrText = 'Trop d\'essais. Réessaie dans une minute.'; return { ok:false, locked:true }; }
+        return { ok:false };
+      } catch(e){
+        state.loginErrText = 'Connexion impossible, réessaie.';
+        return { ok:false, error:true };
+      }
+    }
+    // Mode local (hors Supabase) : listes stockées localement, sans code en dur.
+    if (role === 'gang'){
+      const g = await getMamaGangUsers();
+      const m = g.find(function(u){ return u.code === code && (u.name||'').toLowerCase() === String(name||'').toLowerCase(); });
+      return m ? { ok:true, id:m.id, name:m.name, poste:m.poste||null } : { ok:false };
+    }
+    const m = findAccessUser(await getAccessUsers(), role, code);
+    return m ? { ok:true, id:m.id, name:m.name||'' } : { ok:false };
+  }
+  async function getGangNames(){
+    if (window.appRpc){
+      try { const r = await window.appRpc('app_gang_names', {}); return Array.isArray(r) ? r : []; } catch(e){ return []; }
+    }
+    return (await getMamaGangUsers()).map(function(u){ return { name:u.name, poste:u.poste }; });
+  }
+  // Gestion des accès : réservée au compte admin Supabase (connexion sécurisée).
+  async function loadAccessAll(){
+    state.accessLoaded = false;
+    if (window.appRpc){
+      try {
+        const r = await window.appRpc('admin_access_list', {});
+        state.accessUsers = (r && r.access) || [];
+        state.mamaGangUsers = (r && r.gang) || [];
+        state.accessLoaded = true;
+        return true;
+      } catch(e){
+        state.accessUsers = []; state.mamaGangUsers = [];
+        return false;
+      }
+    }
+    state.accessUsers = await getAccessUsers();
+    state.mamaGangUsers = await getMamaGangUsers();
+    state.accessLoaded = true;
+    return true;
+  }
+  async function accessSaveAll(access, gang){
+    if (!state.accessLoaded){ state.accessAuthNeeded = true; state.accessUserError = 'Reconnecte-toi avec ton compte admin pour modifier les accès.'; return; }
+    if (window.appRpc){
+      try { await window.appRpc('admin_access_save', { p_access: access, p_gang: gang }); }
+      catch(e){ state.accessAuthNeeded = true; state.accessLoaded = false; state.accessUserError = 'Enregistrement refusé : reconnecte-toi avec ton compte admin.'; }
+      return;
+    }
+    await window.storage.set('accessUsers', JSON.stringify(access), true);
+    await window.storage.set('mamaGangUsers', JSON.stringify(gang), true);
+  }
   async function getAccessUsers(){
     try {
       const res = await window.storage.get('accessUsers', true);
@@ -1813,7 +1878,7 @@ window.agAuth = {
     }
   }
   async function saveAccessUsers(list){
-    await window.storage.set('accessUsers', JSON.stringify(list), true);
+    await accessSaveAll(list, state.mamaGangUsers || []);
   }
   function findAccessUser(list, role, code){
     return (list||[]).find(function(u){ return u.role === role && u.code === code; });
@@ -1871,7 +1936,7 @@ window.agAuth = {
     await window.storage.set('processInfos', JSON.stringify(list), true);
   }
   async function saveMamaGangUsers(list){
-    await window.storage.set('mamaGangUsers', JSON.stringify(list), true);
+    await accessSaveAll(state.accessUsers || [], list);
   }
   function openPdfReliably(dataUrl, filename){
     try {
@@ -2126,7 +2191,7 @@ window.agAuth = {
       }
       if (String(state.screen).indexOf('econome-') === 0){ state.requisitions = await getRequisitions(); }
       if (state.screen === 'archives'){ state.screen = 'checklistes-menu'; }
-      if (state.screen === 'bar-messages'){ try { state.barMessages = await getBarMessages(false); const g = await getMamaGangUsers(); state.barMessageUsers = g.filter(function(u){ return u.poste === 'bar'; }).map(function(u){ return u.name; }); } catch(e){} }
+      if (state.screen === 'bar-messages'){ try { state.barMessages = await getBarMessages(false); const g = await getGangNames(); state.barMessageUsers = g.filter(function(u){ return u.poste === 'bar'; }).map(function(u){ return u.name; }); } catch(e){} }
       if (state.screen === 'requi-follow'){ state.requisitions = await getRequisitions(); state.followReqId = null; }
       if (state.screen === 'events-form' && state.eventsUnlocked){
         state.eventSheets = await getEventSheets();
@@ -2180,8 +2245,8 @@ window.agAuth = {
       return;
     }
     try {
-      const [structureRaw, historique, seedUsers, seedGangUsers, migrationVersion] = await Promise.all([
-        getStructureRaw(), getHistorique(), getAccessUsers(), getMamaGangUsers(), getMigrationVersion()
+      const [structureRaw, historique, migrationVersion] = await Promise.all([
+        getStructureRaw(), getHistorique(), getMigrationVersion()
       ]);
       state.historique = historique;
       if (migrationVersion >= CURRENT_MIGRATION_VERSION){
@@ -2198,55 +2263,6 @@ window.agAuth = {
         console.error('Erreur pendant la migration de structure (on continue avec la version actuelle):', migErr);
         state.structure = structureRaw;
         structureMigrationOk = false;
-      }
-      let seedUsersChanged = false;
-      try {
-        const oldAdminSeed = seedUsers.find(function(u){ return u.id === 'usr-seed-arnaud-admin'; });
-        if (oldAdminSeed && oldAdminSeed.code !== '1515'){
-          oldAdminSeed.code = '1515';
-          seedUsersChanged = true;
-        } else if (!oldAdminSeed && !seedUsers.some(function(u){ return u.role === 'admin' && u.code === '1515'; })){
-          seedUsers.push({ id:'usr-seed-arnaud-admin', name:'Arnaud', role:'admin', code:'1515' });
-          seedUsersChanged = true;
-        }
-        if (seedUsersChanged){
-          await saveAccessUsers(seedUsers);
-        }
-        if (!seedGangUsers.some(function(u){ return u.code === '1789'; })){
-          seedGangUsers.push({ id:'gang-seed-arnaud', name:'Arnaud', code:'1789' });
-          await saveMamaGangUsers(seedGangUsers);
-        }
-      } catch(seedErr){
-        console.error('Erreur pendant la vérification des profils admin/seed (on continue) :', seedErr);
-      }
-      try {
-        const newProfiles = [
-          {name:'Anaïs M', code:'6719'},
-          {name:'Anaïs Y', code:'9173'},
-          {name:'Bruno', code:'2604'},
-          {name:'Charles', code:'6130'},
-          {name:'Cléa', code:'4873'},
-          {name:'Cyntia', code:'6132'},
-          {name:'Elisa', code:'9546'},
-          {name:'Ella', code:'171'},
-          {name:'Giuseppe', code:'4587'},
-          {name:'Matéo L', code:'9864'},
-          {name:'Louis', code:'4319'},
-          {name:'Matéo St', code:'6731'},
-          {name:'Maxence', code:'5947'}
-        ];
-        let newProfilesAdded = false;
-        newProfiles.forEach(function(p){
-          if (!seedGangUsers.some(function(u){ return u.code === p.code; })){
-            seedGangUsers.push({ id:'gang-'+p.code+'-'+Date.now(), name: p.name, code: p.code, poste:'non-attribue' });
-            newProfilesAdded = true;
-          }
-        });
-        if (newProfilesAdded){
-          await saveMamaGangUsers(seedGangUsers);
-        }
-      } catch(profilesErr){
-        console.error('Erreur pendant l\'ajout des nouveaux profils (on continue) :', profilesErr);
       }
       try {
         const existingProcessInfos = await getProcessInfos();
@@ -2407,12 +2423,11 @@ window.agAuth = {
     else if (action === 'submitNightLoginCode'){
       const input = document.getElementById('night-login-code');
       const code = (input.value||'').trim();
-      const usersNight = await getAccessUsers();
-      const matchNight = findAccessUser(usersNight, 'night', code);
-      if (matchNight || code === '3333'){
+      const matchNight = await serverLogin('night', code);
+      if (matchNight.ok){
         state.nightLoginCodeError = false;
         state.nightUnlocked = true;
-        if (matchNight) state.name = matchNight.name;
+        if (matchNight.name) state.name = matchNight.name;
         state.structure = await getStructureRaw();
         state.nightProgress = await loadNightProgress();
         state.screen = 'night';
@@ -2511,10 +2526,9 @@ window.agAuth = {
         render();
         return;
       }
-      const gangUsers = await getMamaGangUsers();
-      const match = gangUsers.find(function(u){ return u.code === c && u.name.toLowerCase() === n.toLowerCase(); });
-      if (!match){
-        state.simpleLoginError = "Prénom ou code incorrect. Demande ton code à un manager.";
+      const match = await serverLogin('gang', c, n);
+      if (!match.ok){
+        state.simpleLoginError = match.locked ? "Trop d'essais. Réessaie dans une minute." : (match.error ? "Connexion impossible, réessaie." : "Prénom ou code incorrect. Demande ton code à un manager.");
         render();
         return;
       }
@@ -2531,19 +2545,11 @@ window.agAuth = {
     else if (action === 'submitManagerLoginCode'){
       const input = document.getElementById('manager-login-code');
       const code = (input.value||'').trim();
-      const usersPromise = getAccessUsers();
       const feedbackPromise = getFeedbackCountsCache();
-      const users = await usersPromise;
-      const match = findAccessUser(users, 'manager', code);
-      if (match){
+      const match = await serverLogin('manager', code);
+      if (match.ok){
         state.managerLoginCodeError = false;
-        state.name = match.name;
-        state.managerUnlocked = true;
-        state.feedbackCounts = await feedbackPromise;
-        state.screen = 'manager-menu';
-      } else if (code === '6666'){
-        state.managerLoginCodeError = false;
-        state.name = 'Manager';
+        if (match.name) state.name = match.name;
         state.managerUnlocked = true;
         state.feedbackCounts = await feedbackPromise;
         state.screen = 'manager-menu';
@@ -2566,12 +2572,11 @@ window.agAuth = {
     else if (action === 'submitEconomeLoginCode'){
       const input = document.getElementById('econome-login-code');
       const code = (input.value||'').trim();
-      const usersE = await getAccessUsers();
-      const matchE = findAccessUser(usersE, 'econome', code);
-      if (matchE || code === '7777'){
+      const matchE = await serverLogin('econome', code);
+      if (matchE.ok){
         state.economeLoginCodeError = false;
         state.economeUnlocked = true;
-        if (matchE) state.name = matchE.name;
+        if (matchE.name) state.name = matchE.name;
         const [requisitions, feedbackCounts] = await Promise.all([getRequisitions(), getFeedbackCountsCache()]);
         state.requisitions = requisitions;
         state.feedbackCounts = feedbackCounts;
@@ -2588,12 +2593,11 @@ window.agAuth = {
     else if (action === 'submitEntertainmentLoginCode'){
       const input = document.getElementById('entertainment-login-code');
       const code = (input.value||'').trim();
-      const usersEnt = await getAccessUsers();
-      const matchEnt = findAccessUser(usersEnt, 'entertainment', code);
-      if (matchEnt || code === '8888'){
+      const matchEnt = await serverLogin('entertainment', code);
+      if (matchEnt.ok){
         state.entertainmentLoginCodeError = false;
         state.entertainmentUnlocked = true;
-        if (matchEnt) state.name = matchEnt.name;
+        if (matchEnt.name) state.name = matchEnt.name;
         const [events, feedbackCounts] = await Promise.all([getEvents(), getFeedbackCountsCache()]);
         state.events = events;
         state.feedbackCounts = feedbackCounts;
@@ -2607,12 +2611,11 @@ window.agAuth = {
     else if (action === 'submitEventsLoginCode'){
       const input = document.getElementById('events-login-code');
       const code = (input.value||'').trim();
-      const usersEv = await getAccessUsers();
-      const matchEv = findAccessUser(usersEv, 'events', code);
-      if (matchEv || code === '9999'){
+      const matchEv = await serverLogin('events', code);
+      if (matchEv.ok){
         state.eventsLoginCodeError = false;
         state.eventsUnlocked = true;
-        if (matchEv) state.name = matchEv.name;
+        if (matchEv.name) state.name = matchEv.name;
         const [eventSheets, feedbackCounts] = await Promise.all([getEventSheets(), getFeedbackCountsCache()]);
         state.eventSheets = eventSheets;
         state.feedbackCounts = feedbackCounts;
@@ -2627,12 +2630,11 @@ window.agAuth = {
     else if (action === 'submitRhLoginCode'){
       const input = document.getElementById('rh-login-code');
       const code = (input.value||'').trim();
-      const usersRh = await getAccessUsers();
-      const matchRh = findAccessUser(usersRh, 'rh', code);
-      if (matchRh || code === '5555'){
+      const matchRh = await serverLogin('rh', code);
+      if (matchRh.ok){
         state.rhLoginCodeError = false;
         state.rhUnlocked = true;
-        if (matchRh) state.name = matchRh.name;
+        if (matchRh.name) state.name = matchRh.name;
         const [rhEvents, feedbackCounts] = await Promise.all([getRhEvents(), getFeedbackCountsCache()]);
         state.rhEvents = rhEvents;
         state.feedbackCounts = feedbackCounts;
@@ -2646,12 +2648,11 @@ window.agAuth = {
     else if (action === 'submitTechniqueLoginCode'){
       const input = document.getElementById('technique-login-code');
       const code = (input.value||'').trim();
-      const usersTech = await getAccessUsers();
-      const matchTech = findAccessUser(usersTech, 'technique', code);
-      if (matchTech || code === '4444'){
+      const matchTech = await serverLogin('technique', code);
+      if (matchTech.ok){
         state.techniqueLoginCodeError = false;
         state.techniqueUnlocked = true;
-        if (matchTech) state.name = matchTech.name;
+        if (matchTech.name) state.name = matchTech.name;
         state.viewFeedbacksCategory = 'technique';
         const list = await getFeedbacks();
         state.feedbacksList = list;
@@ -2673,13 +2674,11 @@ window.agAuth = {
     else if (action === 'submitAdminLoginCode'){
       const input = document.getElementById('admin-login-code');
       const code = (input.value||'').trim();
-      const usersAdm = await getAccessUsers();
-      const matchAdm = findAccessUser(usersAdm, 'admin', code);
-      if (matchAdm || code === '1111' || code === '1515'){
+      const matchAdm = await serverLogin('admin', code);
+      if (matchAdm.ok){
         state.adminLoginCodeError = false;
         state.adminUnlocked = true;
-        if (matchAdm) state.name = matchAdm.name;
-        state.accessUsers = usersAdm;
+        if (matchAdm.name) state.name = matchAdm.name;
         state.screen = 'admin-menu';
       } else {
         state.adminLoginCodeError = true;
@@ -3214,11 +3213,26 @@ window.agAuth = {
       state.screen = 'events-list';
       render();
     }
+    else if (action === 'accessSignIn'){
+      const em = ((document.getElementById('access-auth-email')||{}).value || '').trim();
+      const pw = (document.getElementById('access-auth-pw')||{}).value || '';
+      state.accessAuthEmail = em;
+      if (!em || !pw){ state.accessUserError = 'Renseigne l\'email et le mot de passe.'; render(); return; }
+      try {
+        await window.agAuth.signIn(em, pw);
+        try { localStorage.setItem('agAdminEmail', em); } catch(e){}
+        const ok = await loadAccessAll();
+        state.accessAuthNeeded = !ok;
+        state.accessUserError = ok ? false : 'Ce compte n\'est pas autorisé à gérer les accès.';
+      } catch(e){
+        state.accessUserError = 'Connexion refusée : email ou mot de passe incorrect.';
+      }
+      render();
+    }
     else if (action === 'goAccessManagement'){
       if (state.adminUnlocked){
-        state.accessUsers = await getAccessUsers();
-        state.mamaGangUsers = await getMamaGangUsers();
         state.accessUserError = false;
+        state.accessAuthNeeded = !(await loadAccessAll());
         state.screen = 'access-management';
       } else {
         state.lockedFor = 'admin-access';
@@ -3336,7 +3350,7 @@ window.agAuth = {
     }
     else if (action === 'goMamaGangManagement'){
       if (state.managerUnlocked){
-        state.mamaGangUsers = await getMamaGangUsers();
+        state.accessAuthNeeded = !(await loadAccessAll());
         state.mamaGangUserError = false;
         state.mamaGangEditingId = null;
         state.screen = 'mama-gang-management';
@@ -4379,7 +4393,7 @@ window.agAuth = {
     }
     else if (action === 'openBarMessages'){
       state.barMessageError = '';
-      const [msgs, gang] = await Promise.all([getBarMessages(false), getMamaGangUsers()]);
+      const [msgs, gang] = await Promise.all([getBarMessages(false), getGangNames()]);
       state.barMessages = msgs;
       let names = gang.filter(function(u){ return u.poste === 'bar'; }).map(function(u){ return u.name; });
       if (!names.length) names = gang.map(function(u){ return u.name; });
@@ -4799,7 +4813,7 @@ window.agAuth = {
       '<p style="color:var(--text-secondary);margin:0 0 24px;font-size:14px">Entre le code manager</p>'+
       '<div style="max-width:260px;margin:0 auto;text-align:left">'+
         '<input id="manager-login-code" type="password" inputmode="numeric" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid '+(state.managerLoginCodeError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-1);color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
-        (state.managerLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">Code incorrect.</p>' : '')+
+        (state.managerLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">'+esc(state.loginErrText||'Code incorrect.')+'</p>' : '')+
         '<button onclick="appAction(\'submitManagerLoginCode\')" style="width:100%;margin-top:16px;padding:14px;border-radius:8px;border:2.5px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Valider</button>'+
         '<button onclick="appAction(\'backToChoice\')" style="width:100%;margin-top:10px;padding:12px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:14px;cursor:pointer">Retour</button>'+
       '</div>'+
@@ -4823,7 +4837,7 @@ window.agAuth = {
       '<p style="color:var(--text-secondary);margin:0 0 24px;font-size:14px">Entre le code économe</p>'+
       '<div style="max-width:260px;margin:0 auto;text-align:left">'+
         '<input id="econome-login-code" type="password" inputmode="numeric" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid '+(state.economeLoginCodeError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-1);color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
-        (state.economeLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">Code incorrect.</p>' : '')+
+        (state.economeLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">'+esc(state.loginErrText||'Code incorrect.')+'</p>' : '')+
         '<button onclick="appAction(\'submitEconomeLoginCode\')" style="width:100%;margin-top:16px;padding:14px;border-radius:8px;border:2.5px solid var(--border-strong,#000);background:#2AB0C5;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Valider</button>'+
         '<button onclick="appAction(\'backToChoice\')" style="width:100%;margin-top:10px;padding:12px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:14px;cursor:pointer">Retour</button>'+
       '</div>'+
@@ -4836,7 +4850,7 @@ window.agAuth = {
       '<p style="color:var(--text-secondary);margin:0 0 24px;font-size:14px">Entre le code entertainment</p>'+
       '<div style="max-width:260px;margin:0 auto;text-align:left">'+
         '<input id="entertainment-login-code" type="password" inputmode="numeric" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid '+(state.entertainmentLoginCodeError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-1);color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
-        (state.entertainmentLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">Code incorrect.</p>' : '')+
+        (state.entertainmentLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">'+esc(state.loginErrText||'Code incorrect.')+'</p>' : '')+
         '<button onclick="appAction(\'submitEntertainmentLoginCode\')" style="width:100%;margin-top:16px;padding:14px;border-radius:8px;border:2.5px solid var(--border-strong,#000);background:#FF8AB4;color:#1A1A1A;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Valider</button>'+
         '<button onclick="appAction(\'backToChoice\')" style="width:100%;margin-top:10px;padding:12px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:14px;cursor:pointer">Retour</button>'+
       '</div>'+
@@ -4849,7 +4863,7 @@ window.agAuth = {
       '<p style="color:var(--text-secondary);margin:0 0 24px;font-size:14px">Entre le code events</p>'+
       '<div style="max-width:260px;margin:0 auto;text-align:left">'+
         '<input id="events-login-code" type="password" inputmode="numeric" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid '+(state.eventsLoginCodeError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-1);color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
-        (state.eventsLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">Code incorrect.</p>' : '')+
+        (state.eventsLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">'+esc(state.loginErrText||'Code incorrect.')+'</p>' : '')+
         '<button onclick="appAction(\'submitEventsLoginCode\')" style="width:100%;margin-top:16px;padding:14px;border-radius:8px;border:2.5px solid var(--border-strong,#000);background:#7A5FE0;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Valider</button>'+
         '<button onclick="appAction(\'backToChoice\')" style="width:100%;margin-top:10px;padding:12px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:14px;cursor:pointer">Retour</button>'+
       '</div>'+
@@ -4862,7 +4876,7 @@ window.agAuth = {
       '<p style="color:var(--text-secondary);margin:0 0 24px;font-size:14px">Entre le code RH</p>'+
       '<div style="max-width:260px;margin:0 auto;text-align:left">'+
         '<input id="rh-login-code" type="password" inputmode="numeric" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid '+(state.rhLoginCodeError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-1);color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
-        (state.rhLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">Code incorrect.</p>' : '')+
+        (state.rhLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">'+esc(state.loginErrText||'Code incorrect.')+'</p>' : '')+
         '<button onclick="appAction(\'submitRhLoginCode\')" style="width:100%;margin-top:16px;padding:14px;border-radius:8px;border:2.5px solid var(--border-strong,#000);background:#3FAE6A;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Valider</button>'+
         '<button onclick="appAction(\'backToChoice\')" style="width:100%;margin-top:10px;padding:12px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:14px;cursor:pointer">Retour</button>'+
       '</div>'+
@@ -4875,7 +4889,7 @@ window.agAuth = {
       '<p style="color:var(--text-secondary);margin:0 0 24px;font-size:14px">Entre le code Night</p>'+
       '<div style="max-width:260px;margin:0 auto;text-align:left">'+
         '<input id="night-login-code" type="password" inputmode="numeric" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid '+(state.nightLoginCodeError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-1);color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
-        (state.nightLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">Code incorrect.</p>' : '')+
+        (state.nightLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">'+esc(state.loginErrText||'Code incorrect.')+'</p>' : '')+
         '<button onclick="appAction(\'submitNightLoginCode\')" style="width:100%;margin-top:16px;padding:14px;border-radius:8px;border:2.5px solid var(--border-strong,#000);background:#2F3E7E;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Valider</button>'+
         '<button onclick="appAction(\'backToChoice\')" style="width:100%;margin-top:10px;padding:12px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:14px;cursor:pointer">Retour</button>'+
       '</div>'+
@@ -4977,7 +4991,7 @@ window.agAuth = {
       '<p style="color:var(--text-secondary);margin:0 0 24px;font-size:14px">Entre le code Technique</p>'+
       '<div style="max-width:260px;margin:0 auto;text-align:left">'+
         '<input id="technique-login-code" type="password" inputmode="numeric" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid '+(state.techniqueLoginCodeError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-1);color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
-        (state.techniqueLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">Code incorrect.</p>' : '')+
+        (state.techniqueLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">'+esc(state.loginErrText||'Code incorrect.')+'</p>' : '')+
         '<button onclick="appAction(\'submitTechniqueLoginCode\')" style="width:100%;margin-top:16px;padding:14px;border-radius:8px;border:2.5px solid var(--border-strong,#000);background:#FF9F43;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Valider</button>'+
         '<button onclick="appAction(\'backToChoice\')" style="width:100%;margin-top:10px;padding:12px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:14px;cursor:pointer">Retour</button>'+
       '</div>'+
@@ -4990,7 +5004,7 @@ window.agAuth = {
       '<p style="color:var(--text-secondary);margin:0 0 24px;font-size:14px">Entre le code admin</p>'+
       '<div style="max-width:260px;margin:0 auto;text-align:left">'+
         '<input id="admin-login-code" type="password" inputmode="numeric" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid '+(state.adminLoginCodeError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-1);color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
-        (state.adminLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">Code incorrect.</p>' : '')+
+        (state.adminLoginCodeError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:8px 0 0">'+esc(state.loginErrText||'Code incorrect.')+'</p>' : '')+
         '<button onclick="appAction(\'submitAdminLoginCode\')" style="width:100%;margin-top:16px;padding:14px;border-radius:8px;border:2.5px solid var(--border-strong,#000);background:#1A1A1A;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Valider</button>'+
         '<button onclick="appAction(\'backToChoice\')" style="width:100%;margin-top:10px;padding:12px;border-radius:8px;border:none;background:none;color:var(--text-muted);font-size:14px;cursor:pointer">Retour</button>'+
       '</div>'+
@@ -6577,6 +6591,19 @@ window.agAuth = {
       '</div>'+
     '</div>';
 
+    if (state.accessAuthNeeded){
+      let savedEmail = state.accessAuthEmail || ''; try { if (!savedEmail) savedEmail = localStorage.getItem('agAdminEmail') || ''; } catch(e){}
+      out += '<div style="padding:16px;margin:8px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;flex-direction:column;gap:8px">'+
+        '<div class="mama-title" style="font-size:15px;color:var(--text-primary)">Connexion sécurisée requise</div>'+
+        '<div style="font-size:13px;color:var(--text-secondary)">Les accès sont protégés : identifie-toi avec ton compte admin pour les voir et les modifier.</div>'+
+        '<input id="access-auth-email" type="email" placeholder="Email admin" value="'+esc(savedEmail)+'" autocomplete="username" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
+        '<input id="access-auth-pw" type="password" placeholder="Mot de passe" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
+        (state.accessUserError ? '<div style="color:var(--text-danger,#A32D2D);font-size:13px">'+esc(state.accessUserError)+'</div>' : '')+
+        '<button onclick="appAction(\'accessSignIn\')" style="width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:800;text-transform:uppercase;cursor:pointer;border:2.5px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff">Se connecter</button>'+
+      '</div>';
+      out += bottomNav('menu');
+      return out;
+    }
     out += '<div style="padding:16px;margin:8px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1)">'+
       '<div class="mama-title" style="font-size:14px;color:var(--text-primary);margin-bottom:10px">'+(editingUser?'Modifier l\'accès':'Ajouter un accès')+'</div>'+
       '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Prénom / Nom</label>'+
