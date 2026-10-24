@@ -2743,6 +2743,12 @@ window.appRpc = async function(fn, args){
     else if (action === 'backToChoice'){
       state.loginStep = 'simple'; state.screen = 'login'; render();
     }
+    else if (action === 'togglePush'){
+      try {
+        await togglePush(payload);
+      } catch(e){}
+      renderKeep();
+    }
     else if (action === 'goOtherAccessMenu'){
       state.screen = 'other-access-menu'; render();
     }
@@ -5766,6 +5772,65 @@ window.appRpc = async function(fn, args){
     return out;
   }
 
+  // ===== Notifications (Web Push) : un interrupteur par espace (managers / technique / econome / entertainment) =====
+  const PUSH_PUBLIC_KEY = 'BFJI_ADWOCbt8ZtigkNPGnfS3MhzSR8nvV4TBnNfbwWDK8cKbN7_6l4jqWWlK1Dh_yod2qHQKSHuAiHOBKc5fy0';
+  const PUSH_LABELS = { managers:'les remontées et fermetures terminées', technique:'les remontées techniques', econome:'les nouvelles réquisitions', entertainment:'les remontées Entertainment' };
+  function pushSupported(){
+    return !!(window.appRpc && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window);
+  }
+  function pushTopicsLocal(){ try { return JSON.parse(localStorage.getItem('cm_push_topics')||'[]'); } catch(e){ return []; } }
+  function pushTopicsSave(a){ try { localStorage.setItem('cm_push_topics', JSON.stringify(a)); } catch(e){} }
+  function pushIsOn(topic){
+    return pushSupported() && Notification.permission === 'granted' && pushTopicsLocal().indexOf(topic) >= 0;
+  }
+  function notifBar(topic){
+    if (!window.appRpc) return '';
+    const base = 'margin:10px 0 0;padding:12px 14px;border-radius:12px;border:2px solid var(--border-strong,#000);background:var(--surface-0);';
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent||'');
+    const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
+    if (!pushSupported()){
+      if (isIos && !standalone){
+        return '<div style="'+base+'font-size:13px;color:var(--text-secondary)">🔔 Pour recevoir les notifications sur iPhone : ouvre l\'app depuis l\'icône de l\'écran d\'accueil (Partager → Sur l\'écran d\'accueil).</div>';
+      }
+      return '';
+    }
+    if (Notification.permission === 'denied'){
+      return '<div style="'+base+'font-size:13px;color:var(--text-secondary)">🔕 Les notifications sont bloquées sur ce téléphone. Autorise-les dans les réglages du téléphone pour cette app.</div>';
+    }
+    const on = pushIsOn(topic);
+    return '<div style="'+base+'display:flex;align-items:center;gap:10px">'+
+      '<div style="flex:1;font-size:13px;color:var(--text-primary)"><b>'+(on?'🔔 Notifications activées':'🔕 Notifications désactivées')+'</b><br><span style="font-size:12px;color:var(--text-secondary)">Tu reçois '+PUSH_LABELS[topic]+'.</span></div>'+
+      '<button onclick="appAction(\'togglePush\',\''+topic+'\')" style="padding:10px 12px;min-height:44px;border-radius:8px;border:2px solid var(--border-strong,#000);background:'+(on?'var(--surface-1)':'#FFD500')+';color:#1A1A1A;font-size:13px;font-weight:800;cursor:pointer">'+(on?'Désactiver':'Activer')+'</button>'+
+    '</div>';
+  }
+  function pushKeyBytes(b64){
+    const pad = '='.repeat((4 - b64.length % 4) % 4);
+    const raw = atob((b64+pad).replace(/-/g,'+').replace(/_/g,'/'));
+    const out = new Uint8Array(raw.length);
+    for (let i=0;i<raw.length;i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+  async function togglePush(topic){
+    const topics = pushTopicsLocal();
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (topics.indexOf(topic) >= 0 && Notification.permission === 'granted'){
+      // désactiver
+      if (sub){ try { await window.appRpc('push_unsubscribe', { p_endpoint: sub.endpoint, p_topic: topic }); } catch(e){} }
+      const rest = topics.filter(function(t){ return t !== topic; });
+      pushTopicsSave(rest);
+      if (sub && rest.length === 0){ try { await sub.unsubscribe(); } catch(e){} }
+      return 'off';
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return 'denied';
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey: pushKeyBytes(PUSH_PUBLIC_KEY) });
+    await window.appRpc('push_subscribe', { p_sub: sub.toJSON(), p_topic: topic, p_name: state.name || null });
+    if (topics.indexOf(topic) < 0) topics.push(topic);
+    pushTopicsSave(topics);
+    return 'on';
+  }
+
   function economeHeader(){
     return '<div style="padding:20px 16px 8px">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000)">'+
@@ -5777,6 +5842,7 @@ window.appRpc = async function(fn, args){
       '<button onclick="appAction(\''+(state.economeFromGang?'leaveRoleSpace':'logout')+'\')" style="display:flex;align-items:center;gap:6px;border:2px solid var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer;padding:8px 12px;border-radius:8px">'+icon('home',16)+'<span>Accueil</span></button>'+
       '</div>'+
       renderFeedbackButton('econome', '#2AB0C5', '#fff')+
+      notifBar('econome')+
       '</div>';
   }
 
@@ -5791,6 +5857,7 @@ window.appRpc = async function(fn, args){
       '<button onclick="appAction(\''+(state.entertainmentFromGang?'leaveRoleSpace':'logout')+'\')" style="display:flex;align-items:center;gap:6px;border:2px solid var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer;padding:8px 12px;border-radius:8px">'+icon('home',16)+'<span>Accueil</span></button>'+
       '</div>'+
       renderFeedbackButton('entertainment', '#FF8AB4', '#1A1A1A')+
+      notifBar('entertainment')+
       '</div>';
   }
 
@@ -6982,6 +7049,7 @@ window.appRpc = async function(fn, args){
       '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000)">'+
       '<h1 class="mama-title" style="font-size:20px;color:var(--text-primary);margin:0">Menu manager</h1>'+
       '</div>'+
+      notifBar('managers')+
     '</div>';
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:12px">';
     const options = [
@@ -7212,6 +7280,7 @@ window.appRpc = async function(fn, args){
         '<h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0;flex:1">Remontées — '+label+'</h1>'+
         icon('edit',22)+
       '</div>'+
+      (state.viewFeedbacksCategory === 'technique' ? notifBar('technique') : '')+
     '</div>';
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
     if (list.length === 0){
