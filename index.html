@@ -3875,7 +3875,7 @@ window.appRpc = async function(fn, args){
       render();
     }
     else if (action === 'goDuty'){
-      state.duty = dutyLoad();
+      state.duty = dutyLoad(); state.dutyImg = null;
       { const dd = state.duty; const parts = String(dd.date||'').split('/'); const dt = parts.length===3 ? new Date(+parts[2], +parts[1]-1, +parts[0]).getTime() : 0;
         if ((dd.sharedAt && Date.now() - dd.sharedAt > 3*3600*1000) || (dt && Date.now() - dt > 36*3600*1000)){ state.duty = dutyBlank(); dutySave(); state.dutyOpen = {}; state.dutyStaffOpen = {}; } }
       state.dutyOpen = state.dutyOpen || {ressenti:true}; state.dutyMsg = ''; state.dutyConfirmReset = false;
@@ -3890,15 +3890,17 @@ window.appRpc = async function(fn, args){
       renderKeep();
     }
     else if (action === 'dutyShare'){
-      const res = await dutyCopy();
       state.duty.sharedAt = Date.now(); dutySave();
+      const blobPromise = dutyImageBlob();            // lancé tout de suite (geste de l'utilisateur)
+      const copied = dutyCopyImage(blobPromise);
+      let blob = null; try { blob = await blobPromise; } catch(e){}
+      const ok = await copied;
+      state.dutyImg = blob ? await blobToDataUrl(blob) : null;
       let saved = true; try { await dutyArchive(); } catch(e){ saved = false; }
       const r = dutyRecipients();
       const subject = 'Duty '+(state.duty.date||'')+' – '+(state.duty.shift||'');
-      state.dutyMsg = (res === 'rich' ? 'Duty copié ✔ avec les tableaux. Colle-le dans le mail (appui long → Coller).' :
-                       (res === 'text' ? 'Duty copié en texte simple (sans tableaux) : ce téléphone n\'accepte pas la copie avec mise en forme.' : 'Copie impossible, réessaie.')) + (saved ? '' : ' (Historique non enregistré : pas de réseau.)');
+      state.dutyMsg = (ok ? 'Duty copié en image ✔ Colle-le dans le corps du mail (appui long → Coller).' : 'Copie automatique impossible : appuie longuement sur l\'image ci-dessous → Copier.') + (saved ? '' : ' (Historique non enregistré : pas de réseau.)');
       renderKeep();
-      // mailto : ouvre la messagerie par défaut (Outlook si c'est celle choisie), sans page web ni redirection.
       window.location.href = 'mailto:'+r.to+'?'+(r.cc.length ? 'cc='+r.cc.map(function(c){ return c.mail; }).join(',')+'&' : '')+'subject='+encodeURIComponent(subject);
     }
     else if (action === 'dutyAdd'){
@@ -7356,6 +7358,158 @@ window.appRpc = async function(fn, args){
     try { await navigator.clipboard.writeText(text); return 'text'; } catch(e){}
     return false;
   }
+  // ===== Duty en image « Mama » (collée dans le corps du mail comme un texte) =====
+  function dutyModel(){
+    const d = state.duty, x = dutyTotals();
+    const v = function(s){ return (s||'').toString().trim(); };
+    const cx = function(k){ return d.cuisine === k ? 'X' : ''; };
+    const secs = [];
+    secs.push({n:1, t:'Ressenti global de la journée / soirée', one:v(d.ressenti)});
+    secs.push({n:2, t:'Ressenti feeling / ambiance équipe', one:v(d.ambiance)});
+    secs.push({n:3, t:'Manager(s) présent(s)', kv:[['Manager RDC',v(d.mgr.rdc)],['Manager Roof',v(d.mgr.roof)],['Manager Bar',v(d.mgr.bar)],['Hôtesse(s)',v(d.mgr.hotesses)]]});
+    secs.push({n:4, t:'Chiffres', head:['Zone','Nb de couverts','CA HT en K€'], w:[0.36,0.32,0.32], rows:[['Restaurant',v(d.chiffres.resto.c),v(d.chiffres.resto.ca)],['Event',v(d.chiffres.event.c),v(d.chiffres.event.ca)],['Bar',v(d.chiffres.bar.c),v(d.chiffres.bar.ca)],['Roof','non',v(d.chiffres.roof.ca)],['Total',String(x.couverts),String(x.ca)]], boldLast:true});
+    const an = []; d.anim.forEach(function(a){ an.push(['Nom de l\'animation / du DJ',v(a.nom)],['Retour sur la prestation',v(a.retour)],['Dance floor ?',v(a.dance)]); });
+    secs.push({n:5, t:'Animation', kv:an});
+    const st = []; DUTY_ZONES.forEach(function(z,i){ d.staff[i].forEach(function(s,j){ if (j === 0 || dutyHasVal(s)) st.push([j===0?z:'',v(s.p),v(s.r),v(s.tm)]); }); });
+    secs.push({n:6, t:'Point staff', sub:'Attribution des rangs, comportement, qualité de travail', head:['Zones','Prénom(s)','Remarque(s)','TM'], w:[0.22,0.25,0.43,0.10], rows:st});
+    secs.push({n:7, t:'Groupes (resto et Events)', head:['Nom du groupe','Nb de guests','Remarques'], w:[0.36,0.2,0.44], rows:d.groupes.map(function(g){ return [v(g.nom),v(g.guests),v(g.rem)]; })});
+    secs.push({n:8, t:'Informations à transmettre', kv:[['@céline · Voucher ? PSP ?',v(d.infos.celine)],['@loic · Incident technique, élément HS',v(d.infos.loic)]]});
+    secs.push({n:9, t:'Retours et plaintes clients', head:['Nom / Table','Détail de la plainte','Solution apportée'], w:[0.24,0.4,0.36], rows:d.plaintes.map(function(p){ return [v(p.nom),v(p.detail),v(p.solution)]; })});
+    secs.push({n:10, t:'Rupture bar & cuisine', kv:[['Rupture BAR',v(d.ruptures.bar)],['Rupture CUISINE',v(d.ruptures.cuisine)]]});
+    const cu = {n:11, t:'Point sur la cuisine', head:['Pas d\'attente','Attente moyenne','Trop d\'attente'], w:[0.333,0.334,0.333], rows:[[cx('pas'),cx('moyenne'),cx('trop')]], center:true};
+    if (v(d.cuisineRem)) cu.extra = ['Remarques', v(d.cuisineRem)];
+    secs.push(cu);
+    secs.push({n:12, t:'Passation d\'informations managers', one:v(d.passation.texte)});
+    secs.push({n:13, t:'Heure de départ du staff', head:['Zone','Heure de départ'], w:[0.4,0.6], rows:[['Salle',v(d.departs.salle)],['Bar',v(d.departs.bar)],['Roof',v(d.departs.roof)]]});
+    return secs;
+  }
+  async function dutyImageBlob(){
+    const W = 720, M = 24, S = 2, COLORS = ['#E8432B','#2AB0C5','#FFD500','#FF6FA5','#7A5FE0','#3FAE6A','#FF9F43'];
+    try { await Promise.all([document.fonts.load('48px Sacramento'), document.fonts.load('bold 16px Arial')]); } catch(e){}
+    const logo = await new Promise(function(res){ const im = new Image(); im.onload = function(){ res(im); }; im.onerror = function(){ res(null); }; im.src = LOGO_URI; });
+    const BODY = 'Arial, Helvetica, sans-serif', HEAD = '"Arial Black", Arial, Helvetica, sans-serif';
+    const measure = document.createElement('canvas').getContext('2d');
+    const wrap = function(ctx, text, maxW){
+      const out = [];
+      String(text||'').split('\n').forEach(function(par){
+        const words = par.split(/\s+/); let line = '';
+        words.forEach(function(w){
+          const t = line ? line+' '+w : w;
+          if (ctx.measureText(t).width <= maxW || !line) line = t; else { out.push(line); line = w; }
+        });
+        out.push(line);
+      });
+      return out;
+    };
+    // ---- plan : liste d'opérations de dessin avec hauteurs mesurées
+    const ops = []; let y = 0;
+    const rr = function(ctx, x0, y0, w, h, r){ ctx.beginPath(); ctx.moveTo(x0+r,y0); ctx.arcTo(x0+w,y0,x0+w,y0+h,r); ctx.arcTo(x0+w,y0+h,x0,y0+h,r); ctx.arcTo(x0,y0+h,x0,y0,r); ctx.arcTo(x0,y0,x0+w,y0,r); ctx.closePath(); };
+    // en-tête
+    const HH = 112; const y0h = 24;
+    const d = state.duty;
+    ops.push(function(ctx){
+      ctx.fillStyle = '#000'; rr(ctx, M+5, y0h+5, W-2*M, HH, 18); ctx.fill();
+      ctx.fillStyle = '#1E5FA8'; rr(ctx, M, y0h, W-2*M, HH, 18); ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.stroke();
+      if (logo){ ctx.save(); ctx.beginPath(); ctx.arc(M+58, y0h+HH/2, 38, 0, Math.PI*2); ctx.closePath(); ctx.fillStyle='#fff'; ctx.fill(); ctx.clip(); ctx.drawImage(logo, M+20, y0h+HH/2-38, 76, 76); ctx.restore(); ctx.beginPath(); ctx.arc(M+58, y0h+HH/2, 38, 0, Math.PI*2); ctx.lineWidth=3; ctx.strokeStyle='#000'; ctx.stroke(); }
+      ctx.fillStyle = '#fff'; ctx.textBaseline = 'alphabetic';
+      ctx.font = '800 46px '+HEAD; ctx.fillText('DUTY', M+112, y0h+66);
+      const label = String(d.date||'')+' · '+String(d.shift||'');
+      ctx.fillStyle = '#FFD500'; ctx.font = '800 20px '+HEAD; ctx.fillText(label, M+114, y0h+95);
+    });
+    y = y0h + HH + 26;
+    dutyModel().forEach(function(sec, si){
+      const col = COLORS[si % COLORS.length], fg = (col === '#FFD500' || col === '#FF9F43' || col === '#2AB0C5') ? '#1A1A1A' : '#fff';
+      // titre
+      const ty = y;
+      const subH = sec.sub ? 18 : 0;
+      ops.push(function(ctx){
+        ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(M+17+2, ty+17+2, 17, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = col; ctx.beginPath(); ctx.arc(M+17, ty+17, 17, 0, Math.PI*2); ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = '#000'; ctx.stroke();
+        ctx.fillStyle = fg; ctx.font = '800 16px '+HEAD; ctx.textAlign = 'center'; ctx.fillText(String(sec.n), M+17, ty+23); ctx.textAlign = 'left';
+        ctx.fillStyle = '#1A1A1A'; ctx.font = '800 18px '+HEAD; const t = sec.t.toUpperCase(); ctx.fillText(t, M+46, ty+24);
+        const w = ctx.measureText(t).width; ctx.fillStyle = col; ctx.fillRect(M+46, ty+30, Math.min(w, W-2*M-46), 4);
+        if (sec.sub){ ctx.fillStyle = '#6b5f4d'; ctx.font = '13px '+BODY; ctx.fillText(sec.sub, M+46, ty+52); }
+      });
+      y += 42 + subH + 8;
+      // tableau
+      const TW = W - 2*M; const PAD = 11, LH = 20;
+      const ws = sec.head ? sec.w.map(function(f){ return Math.round(TW*f); }) : (sec.kv ? [Math.round(TW*0.42), TW-Math.round(TW*0.42)] : [TW]);
+      const rows = [];   // {cells:[text], kind:'head'|'label'|'body', h, lines:[[...]]}
+      const pushRow = function(cells, kind, o){ rows.push({cells:cells, kind:kind, o:o||{}}); };
+      if (sec.head) pushRow(sec.head, 'head');
+      if (sec.rows) sec.rows.forEach(function(r, ri){ pushRow(r, 'body', {bold: sec.boldLast && ri === sec.rows.length-1}); });
+      if (sec.kv) sec.kv.forEach(function(r){ pushRow(r, 'kv'); });
+      if (sec.one !== undefined) pushRow([sec.one], 'one');
+      if (sec.extra) { rows.push({cells:sec.extra, kind:'kv', o:{}}); }
+      rows.forEach(function(r){
+        const cw = (r.kind === 'kv' && sec.head) ? [Math.round(TW*0.3), TW-Math.round(TW*0.3)] : ws;
+        r.cw = cw;
+        r.lines = r.cells.map(function(c, ci){
+          measure.font = (r.kind === 'head' ? '800 12px '+HEAD : ((r.kind === 'kv' && ci === 0) || r.o.bold ? 'bold 15px '+BODY : '15px '+BODY));
+          return wrap(measure, c, cw[ci]-2*PAD);
+        });
+        const n = Math.max.apply(null, r.lines.map(function(l){ return l.length; }));
+        r.h = Math.max(r.kind === 'one' ? 54 : 38, n*LH + 2*PAD - 4);
+      });
+      const totalH = rows.reduce(function(a, r){ return a + r.h; }, 0);
+      const ty2 = y;
+      ops.push(function(ctx){
+        ctx.fillStyle = '#000'; rr(ctx, M+4, ty2+4, TW, totalH, 10); ctx.fill();
+        ctx.save(); rr(ctx, M, ty2, TW, totalH, 10); ctx.clip();
+        let cy = ty2;
+        rows.forEach(function(r){
+          let cxp = M;
+          r.cells.forEach(function(c, ci){
+            const w = r.cw[ci];
+            ctx.fillStyle = r.kind === 'head' ? col : ((r.kind === 'kv' && ci === 0) ? '#FFF1D6' : '#fff');
+            ctx.fillRect(cxp, cy, w, r.h);
+            ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.strokeRect(cxp, cy, w, r.h);
+            ctx.fillStyle = r.kind === 'head' ? fg : '#1A1A1A';
+            ctx.font = r.kind === 'head' ? '800 12px '+HEAD : ((r.kind === 'kv' && ci === 0) || r.o.bold ? 'bold 15px '+BODY : '15px '+BODY);
+            const centered = r.kind === 'head' || (sec.center && r.kind !== 'kv') || (ci === 0 && r.kind === 'kv');
+            ctx.textAlign = centered ? 'center' : 'left';
+            const tx = centered ? cxp + w/2 : cxp + PAD;
+            const lines = r.lines[ci]; const block = lines.length*LH; let ly = cy + (r.h - block)/2 + 15;
+            if (r.kind === 'one') ly = cy + PAD + 12;
+            lines.forEach(function(l){ ctx.fillText(l, tx, ly); ly += LH; });
+            ctx.textAlign = 'left';
+            cxp += w;
+          });
+          cy += r.h;
+        });
+        ctx.restore();
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 3; rr(ctx, M, ty2, TW, totalH, 10); ctx.stroke();
+      });
+      y += totalH + 28;
+    });
+    const H = Math.ceil(y + 6);
+    const cv = document.createElement('canvas'); cv.width = W*S; cv.height = H*S;
+    const ctx = cv.getContext('2d'); ctx.scale(S, S);
+    ctx.fillStyle = '#FFF6E8'; ctx.fillRect(0, 0, W, H);
+    ops.forEach(function(op){ op(ctx); });
+    return await new Promise(function(res){ cv.toBlob(function(b){ res(b); }, 'image/png'); });
+  }
+  function blobToDataUrl(b){ return new Promise(function(res){ const r = new FileReader(); r.onload = function(){ res(r.result); }; r.readAsDataURL(b); }); }
+  // Copie l'image dans le presse-papiers. La promesse est passée tout de suite au presse-papiers pour rester dans le geste de l'utilisateur.
+  async function dutyCopyImage(blobPromise){
+    try {
+      if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write){
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
+        return true;
+      }
+    } catch(e){}
+    try {
+      const url = await blobToDataUrl(await blobPromise);
+      const box = document.createElement('div'); box.contentEditable = 'true';
+      box.style.cssText = 'position:fixed;left:0;top:0;width:700px;opacity:0.01;pointer-events:none;background:#fff;z-index:-1';
+      box.innerHTML = '<img src="'+url+'" style="width:700px">';
+      document.body.appendChild(box);
+      const range = document.createRange(); range.selectNodeContents(box);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      const ok = document.execCommand('copy'); sel.removeAllRanges(); box.remove();
+      return ok;
+    } catch(e){ return false; }
+  }
   function dutyInput(path, ph, extra){
     return '<input type="text" value="'+esc(dutyGet(path))+'" placeholder="'+esc(ph||'')+'" oninput="dutySet(\''+path+'\',this.value)" style="width:100%;box-sizing:border-box;padding:11px;border-radius:10px;border:1.5px solid var(--border-strong,var(--border));background:var(--surface-0);color:var(--text-primary);font-size:15px;'+(extra||'')+'">';
   }
@@ -7458,7 +7612,8 @@ window.appRpc = async function(fn, args){
       '<div id="duty-recip" style="font-size:12px;color:var(--text-secondary);margin:0 0 10px;line-height:1.5">'+dutyRecipHtml()+'</div>'+
       '<button onclick="appAction(\'dutyShare\')" style="width:100%;padding:16px;margin:0 0 8px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#FF6FA5;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 #000;cursor:pointer">Partager le duty</button>'+
       (state.dutyMsg ? '<div style="padding:10px;border-radius:10px;background:#E6F4EA;color:#1E6B34;font-size:13px;font-weight:700;margin:0 0 8px">'+esc(state.dutyMsg)+'</div>' : '')+
-      '<div style="font-size:12px;color:var(--text-secondary);margin:0">« Partager » copie le duty (avec les tableaux) puis ouvre ton mail : il n\'y a plus qu\'à coller.</div>'+
+      (state.dutyImg ? '<img src="'+state.dutyImg+'" alt="Duty" style="width:100%;border:2px solid var(--border-strong,#000);border-radius:10px;margin:0 0 10px;display:block">' : '')+
+      '<div style="font-size:12px;color:var(--text-secondary);margin:0">« Partager » copie le duty en image puis ouvre ton mail : il n\'y a plus qu\'à coller dans le corps du mail.</div>'+
     '</div>';
     out += '</div>'+bottomNav('menu');
     return out;
