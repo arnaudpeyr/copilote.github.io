@@ -1152,6 +1152,7 @@ window.agAuth = {
     followReqId: null,
     followMode: 'cave',
     infosOpen: false,
+    archiveMonth: null, archiveData: null, archiveRaw: '', archiveIndex: [], archiveMsg: '', archiveBusy: false, archivePending: 0, archiveLoading: false, archiveError: '',
     barMessages: [],
     barMessageUsers: [],
     barMessageError: '',
@@ -1261,6 +1262,15 @@ window.agAuth = {
     return d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
   }
 
+  const SHOW_PLANNINGS = false; // Plannings masqués (pas encore prêts) : repasser à true pour les réactiver.
+  const ARCHIVE_KEEP_MONTHS = 1; // mois en cours + 1 mois précédent restent dans l'historique ; plus ancien => archivé.
+  const ARCHIVE_KINDS = [
+    { key:'historique',   label:'Checklists' },
+    { key:'temperatures', label:'Températures' },
+    { key:'tracabilite',  label:'Traçabilité' },
+    { key:'pertes',       label:'Pertes' },
+    { key:'requisitions', label:'Réquis' }
+  ];
   const CURRENT_MIGRATION_VERSION = 14;
   async function getMigrationVersion(){
     try {
@@ -1631,7 +1641,7 @@ window.agAuth = {
   async function addHistorique(entry){
     const list = await getHistorique();
     list.unshift(entry);
-    await window.storage.set('historique', JSON.stringify(list.slice(0,300)), true);
+    await window.storage.set('historique', JSON.stringify(list.slice(0,1500)), true);
   }
   async function getPertes(){
     try {
@@ -2114,6 +2124,7 @@ window.agAuth = {
         state.events = evAll[0]; state.eventSheets = evAll[1]; state.rhEvents = evAll[2];
       }
       if (String(state.screen).indexOf('econome-') === 0){ state.requisitions = await getRequisitions(); }
+      if (state.screen === 'archives'){ state.screen = 'checklistes-menu'; }
       if (state.screen === 'bar-messages'){ try { state.barMessages = await getBarMessages(false); const g = await getMamaGangUsers(); state.barMessageUsers = g.filter(function(u){ return u.poste === 'bar'; }).map(function(u){ return u.name; }); } catch(e){} }
       if (state.screen === 'requi-follow'){ state.requisitions = await getRequisitions(); state.followReqId = null; }
       if (state.screen === 'events-form' && state.eventsUnlocked){
@@ -2539,6 +2550,7 @@ window.agAuth = {
         state.managerLoginCodeError = true;
       }
       render();
+      if (state.managerUnlocked) autoArchive(false);
     }
     else if (action === 'loginManagerName'){
       const nameInput = document.getElementById('login-name');
@@ -4160,6 +4172,13 @@ window.agAuth = {
         render();
         return;
       }
+      if (payload.catId === 'fermeture'){
+        // Fermer un floor : on demande d'abord le prénom du manager qui replie (sinon le rapport n'affiche que « Manager »).
+        state.fermetureNameError = false;
+        state.screen = 'fermeture-name';
+        render();
+        return;
+      }
       state.weeklyIncompleteError = false;
       state.progress[payload.subId] = await getProgress(payload.subId);
       if (!state.progress[payload.subId].operator){
@@ -4290,6 +4309,63 @@ window.agAuth = {
       if (idx >= locations.length) idx = 0;
       state.requisitionFridgeIndex = idx;
       render();
+    }
+    else if (action === 'confirmFermetureName'){
+      const input = document.getElementById('fermeture-name-input');
+      const name = input ? input.value.trim() : '';
+      if (!name){ state.fermetureNameError = true; render(); return; }
+      state.fermetureNameError = false;
+      state.weeklyIncompleteError = false;
+      const prog = await getProgress(state.sublieuId);
+      prog.operator = name;
+      await setProgress(state.sublieuId, prog);
+      state.progress[state.sublieuId] = prog;
+      state.screen = 'checklist';
+      render();
+    }
+    else if (action === 'goChecklistesMenu'){
+      if (state.managerUnlocked){ state.screen = 'checklistes-menu'; }
+      else { state.lockedFor = 'menu'; state.screen = 'manager-locked'; }
+      render();
+    }
+    else if (action === 'goArchives'){
+      if (!state.managerUnlocked){ state.lockedFor = 'menu'; state.screen = 'manager-locked'; render(); return; }
+      state.archiveMonth = null; state.archiveData = null; state.archiveMsg = ''; state.archiveBusy = false;
+      state.archiveIndex = await archiveGetIndex();
+      state.screen = 'archives'; render();
+      try { const pl = await archivePlan(); state.archivePending = pl.total; } catch(e){ state.archivePending = 0; }
+      if (state.screen === 'archives') render();
+    }
+    else if (action === 'backArchives'){
+      state.archiveMonth = null; state.archiveData = null; render();
+    }
+    else if (action === 'archiveNow'){
+      if (state.archiveBusy) return;
+      state.archiveBusy = true; state.archiveMsg = ''; render();
+      const r = await autoArchive(true);
+      state.archiveBusy = false;
+      state.archiveMsg = r && r.error ? 'L\'archivage n\'a pas pu se terminer : rien n\'a été supprimé. Réessaie plus tard.' : (r && r.moved ? r.moved+' rapport'+(r.moved>1?'s':'')+' archivé'+(r.moved>1?'s':'')+'.' : 'Rien à archiver pour le moment.');
+      state.archiveIndex = await archiveGetIndex();
+      state.archivePending = 0;
+      render();
+    }
+    else if (action === 'openArchiveMonth'){
+      state.archiveMonth = payload; state.archiveData = null; state.archiveError = ''; state.archiveLoading = true; render();
+      try {
+        const got = await archiveGetMonth(payload);
+        state.archiveData = got ? got.data : { data: {} };
+        state.archiveRaw = got ? got.raw : '';
+      } catch(e){ state.archiveError = 'Archive illisible pour le moment.'; }
+      state.archiveLoading = false; render();
+    }
+    else if (action === 'exportArchiveCsv'){
+      if (!state.archiveData) return;
+      archiveDownload('archive-'+state.archiveMonth+'.csv', new Blob(['\ufeff'+archiveCsvOf(state.archiveMonth, state.archiveData.data || {})], { type:'text/csv;charset=utf-8;' }));
+    }
+    else if (action === 'exportArchiveGz'){
+      if (!state.archiveRaw) return;
+      if (state.archiveRaw.indexOf('gz:') === 0) archiveDownload('archive-'+state.archiveMonth+'.json.gz', new Blob([b64ToBytes(state.archiveRaw.slice(3))], { type:'application/gzip' }));
+      else archiveDownload('archive-'+state.archiveMonth+'.json', new Blob([state.archiveRaw.slice(5)], { type:'application/json' }));
     }
     else if (action === 'toggleInfosUtiles'){
       state.infosOpen = !state.infosOpen;
@@ -4946,7 +5022,7 @@ window.agAuth = {
           icon('chevronRight',16)+
         '</div></div>' : '')+
     '</div>';
-    out += '<div onclick="appAction(\'goPlanningView\')" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:2.5px solid var(--border-strong,#000);border-radius:14px;background:var(--surface-1);color:var(--text-primary);cursor:pointer;box-shadow:4px 4px 0 var(--border-strong,#000);transform:rotate(-0.5deg)">'+
+    if (SHOW_PLANNINGS) out += '<div onclick="appAction(\'goPlanningView\')" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:2.5px solid var(--border-strong,#000);border-radius:14px;background:var(--surface-1);color:var(--text-primary);cursor:pointer;box-shadow:4px 4px 0 var(--border-strong,#000);transform:rotate(-0.5deg)">'+
       iconBadge('event', '#B98CE8', '#fff')+
       '<div style="flex:1"><div class="mama-title" style="font-size:15px">Les plannings</div>'+
       '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">Vérifier mes shifts</div></div>'+
@@ -5463,7 +5539,7 @@ window.agAuth = {
       '<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000)">'+
       '<div style="display:flex;align-items:center;gap:10px">'+
         '<img src="'+LOGO_URI+'" alt="Mama Shelter Toulouse" style="width:36px;height:36px;object-fit:contain;flex-shrink:0">'+
-        '<div><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">Fiches de fonction</h1>'+
+        '<div><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">Réunion de fonction</h1>'+
         '<p style="color:var(--text-secondary);margin:2px 0 0;font-size:13px">Accès events</p></div>'+
       '</div>'+
       '<button onclick="appAction(\''+backAction+'\')" style="display:flex;align-items:center;gap:6px;border:2px solid var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer;padding:8px 12px;border-radius:8px">'+icon('home',16)+'<span>Accueil</span></button>'+
@@ -5851,6 +5927,288 @@ window.agAuth = {
       '</div>';
     }
     if (!fromEcon) out += bottomNav('home');
+    return out;
+  }
+
+  // ===== Archivage mensuel des rapports (compressé, exportable) =====
+  function archiveTsOf(e){
+    const m = e && typeof e.id === 'string' ? e.id.match(/-(\d{10,})/) : null;
+    return m ? parseInt(m[1], 10) : null;
+  }
+  function archiveMonthOf(e){
+    const ts = archiveTsOf(e);
+    return ts ? monthKeyOf(new Date(ts)) : null;
+  }
+  function monthLabelOf(mk){
+    const noms = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    const parts = mk.split('-'); return noms[parseInt(parts[1],10)-1]+' '+parts[0];
+  }
+  function archiveCutoffMonth(){
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - ARCHIVE_KEEP_MONTHS);
+    return monthKeyOf(d); // les mois STRICTEMENT avant ce mois sont archivés
+  }
+  // Lecture stricte : une vraie erreur de lecture interrompt l'archivage (on ne supprime jamais sur une lecture douteuse).
+  async function archiveReadList(key){
+    try {
+      const res = await window.storage.get(key, true);
+      const list = JSON.parse(res.value);
+      if (!Array.isArray(list)) throw new Error('format inattendu : '+key);
+      return list;
+    } catch(e){
+      if (e && /not found/i.test(String(e.message||e))) return [];
+      throw e;
+    }
+  }
+  function bytesToB64(bytes){
+    let bin = ''; const CH = 0x8000;
+    for (let i=0; i<bytes.length; i+=CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+CH));
+    return btoa(bin);
+  }
+  function b64ToBytes(b64){
+    const bin = atob(b64); const out = new Uint8Array(bin.length);
+    for (let i=0; i<bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  async function archivePack(obj){
+    const json = JSON.stringify(obj);
+    if (typeof CompressionStream === 'undefined') return 'json:'+json;
+    const cs = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
+    const buf = new Uint8Array(await new Response(cs).arrayBuffer());
+    return 'gz:'+bytesToB64(buf);
+  }
+  async function archiveUnpack(str){
+    if (str.indexOf('json:') === 0) return JSON.parse(str.slice(5));
+    const bytes = b64ToBytes(str.slice(3));
+    const ds = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return JSON.parse(await new Response(ds).text());
+  }
+  async function archiveGetMonth(mk){
+    try {
+      const res = await window.storage.get('archive-'+mk, true);
+      return { raw: res.value, data: await archiveUnpack(res.value) };
+    } catch(e){
+      if (e && /not found/i.test(String(e.message||e))) return null;
+      throw e;
+    }
+  }
+  async function archiveGetIndex(){
+    try {
+      const res = await window.storage.get('archiveIndex', true);
+      const idx = JSON.parse(res.value);
+      return Array.isArray(idx) ? idx : [];
+    } catch(e){ return []; }
+  }
+  // Calcule ce qui doit être archivé (sans rien modifier).
+  async function archivePlan(){
+    const cutoff = archiveCutoffMonth();
+    const lists = {};
+    const plan = {}; let total = 0;
+    for (const k of ARCHIVE_KINDS){
+      lists[k.key] = await archiveReadList(k.key);
+      lists[k.key].forEach(function(e){
+        const mk = archiveMonthOf(e);
+        if (!mk || mk >= cutoff) return;
+        plan[mk] = plan[mk] || {};
+        (plan[mk][k.key] = plan[mk][k.key] || []).push(e);
+        total++;
+      });
+    }
+    return { plan: plan, total: total, cutoff: cutoff };
+  }
+  let archiveRunning = false;
+  async function runArchive(){
+    if (archiveRunning) return { moved: 0, months: 0, skipped: true };
+    archiveRunning = true;
+    try {
+      const pl = await archivePlan();
+      const months = Object.keys(pl.plan).sort();
+      if (!months.length) return { moved: 0, months: 0 };
+      const verified = {}; // key -> Set d'ids archivés ET vérifiés
+      const idx = await archiveGetIndex();
+      for (const mk of months){
+        const existing = await archiveGetMonth(mk);
+        const data = existing && existing.data && existing.data.data ? existing.data.data : {};
+        ARCHIVE_KINDS.forEach(function(k){
+          const have = data[k.key] || [];
+          const ids = {}; have.forEach(function(e){ if (e && e.id) ids[e.id] = true; });
+          (pl.plan[mk][k.key] || []).forEach(function(e){ if (!ids[e.id]) have.push(e); });
+          data[k.key] = have;
+        });
+        const packed = await archivePack({ month: mk, updatedAt: new Date().toISOString(), data: data });
+        await window.storage.set('archive-'+mk, packed, true);
+        // Vérification : on relit et on contrôle que chaque rapport est bien présent avant de supprimer quoi que ce soit.
+        const back = await archiveGetMonth(mk);
+        const check = (back && back.data && back.data.data) || {};
+        let ok = true;
+        ARCHIVE_KINDS.forEach(function(k){
+          const got = {}; (check[k.key] || []).forEach(function(e){ if (e && e.id) got[e.id] = true; });
+          (pl.plan[mk][k.key] || []).forEach(function(e){ if (!got[e.id]) ok = false; });
+        });
+        if (!ok) throw new Error('vérification archive '+mk+' échouée');
+        ARCHIVE_KINDS.forEach(function(k){
+          verified[k.key] = verified[k.key] || {};
+          (pl.plan[mk][k.key] || []).forEach(function(e){ verified[k.key][e.id] = true; });
+        });
+        const counts = {}; let tot = 0;
+        ARCHIVE_KINDS.forEach(function(k){ counts[k.key] = (data[k.key]||[]).length; tot += counts[k.key]; });
+        const entry = { month: mk, counts: counts, total: tot, bytes: packed.length, updatedAt: new Date().toISOString() };
+        const at = idx.findIndex(function(x){ return x.month === mk; });
+        if (at >= 0) idx[at] = entry; else idx.push(entry);
+      }
+      // Retrait des listes actives : relecture fraîche, suppression par identifiant uniquement.
+      let moved = 0;
+      for (const k of ARCHIVE_KINDS){
+        if (!verified[k.key]) continue;
+        const fresh = await archiveReadList(k.key);
+        const kept = fresh.filter(function(e){ return !(e && verified[k.key][e.id]); });
+        moved += fresh.length - kept.length;
+        if (kept.length !== fresh.length) await window.storage.set(k.key, JSON.stringify(kept), true);
+      }
+      idx.sort(function(a,b){ return a.month < b.month ? 1 : -1; });
+      await window.storage.set('archiveIndex', JSON.stringify(idx), true);
+      return { moved: moved, months: months.length };
+    } finally {
+      archiveRunning = false;
+    }
+  }
+  // Lancé en tâche de fond à la connexion manager (au plus une fois par jour et par appareil).
+  async function autoArchive(force){
+    try {
+      const today = dayKeyOf(new Date());
+      if (!force){
+        try { if (localStorage.getItem('archiveLastRun') === today) return; } catch(e){}
+      }
+      const r = await runArchive();
+      if (!r.skipped){ try { localStorage.setItem('archiveLastRun', today); } catch(e){} }
+      return r;
+    } catch(e){
+      console.error('Archivage mensuel non effectué :', e);
+      return { error: true };
+    }
+  }
+
+  function archiveCsvOf(mk, data){
+    const q = function(v){ return '"'+String(v==null?'':v).replace(/"/g,'""')+'"'; };
+    const flat = function(v){
+      if (v == null) return '';
+      if (Array.isArray(v)) return v.map(flat).join(' | ');
+      if (typeof v === 'object') return Object.keys(v).map(function(k){ return k+': '+flat(v[k]); }).join(', ');
+      return String(v);
+    };
+    let csv = 'Type;Zone;Sous-lieu;Opérateur;Date;Détail\n';
+    ARCHIVE_KINDS.forEach(function(k){
+      (data[k.key] || []).forEach(function(e){
+        let detail = '';
+        if (k.key === 'historique'){
+          const snap = e.tasksSnapshot || [];
+          const done = snap.filter(function(t){ return t.checked; }).length;
+          const missing = snap.filter(function(t){ return !t.checked; }).map(function(t){ return t.label; });
+          detail = done+'/'+snap.length+' tâches cochées'+(missing.length ? ' ; non cochées : '+missing.join(' | ') : '')+(e.comment ? ' ; commentaire : '+e.comment : '');
+        } else if (k.key === 'temperatures'){
+          detail = flat(e.readings)+(e.comment ? ' ; commentaire : '+e.comment : '');
+        } else if (k.key === 'tracabilite'){
+          detail = flat(e.entries);
+        } else if (k.key === 'requisitions'){
+          detail = (e.products||[]).map(function(pr){
+            return pr.name+' ×'+pr.quantity+(pr.unit?' '+pr.unit:'')+' [cave: '+(pr.cave ? (pr.cave.qty!=null?pr.cave.qty:'ok') : '—')+' ; réassort: '+(pr.etage ? (pr.etage.qty!=null?pr.etage.qty:'ok') : '—')+']';
+          }).join(' | ')+(e.comment ? ' ; commentaire : '+e.comment : '');
+        } else {
+          const c = Object.assign({}, e); delete c.id; delete c.operator; delete c.categoryName; delete c.sublieuName; delete c.when;
+          detail = flat(c);
+        }
+        csv += [k.label, e.categoryName, e.sublieuName, e.operator, e.when, detail].map(q).join(';')+'\n';
+      });
+    });
+    return csv;
+  }
+  function archiveDownload(filename, blob){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
+  }
+
+  function menuButtonHtml(opt){
+    const fg = opt.fg || 'var(--text-primary)';
+    return '<button onclick="appAction(\''+opt.action+'\')" style="display:flex;align-items:center;gap:14px;padding:18px;border-radius:14px;border:2.5px solid var(--border-strong,#000);background:'+opt.color+';color:'+fg+';cursor:pointer;text-align:left;box-shadow:4px 4px 0 var(--border-strong,#000)">'+
+      '<div style="width:42px;height:42px;flex-shrink:0;border-radius:10px;border:2px solid var(--border-strong,#000);background:#fff;color:'+opt.color+';display:flex;align-items:center;justify-content:center">'+icon(opt.icon,22)+'</div>'+
+      '<div class="mama-title" style="flex:1;font-size:15px;color:'+fg+'">'+opt.label+'</div>'+
+      (opt.sub ? '<div style="font-size:12px;opacity:.85;color:'+fg+'">'+esc(opt.sub)+'</div>' : '')+
+    '</button>';
+  }
+  function screenFermetureName(){
+    const sub = findSublieu(state.categoryId, state.sublieuId);
+    const back = state.fermetureFloor ? "appAction('fermetureFloor','"+state.fermetureFloor+"')" : "appAction('goFermeture')";
+    let out = requiHubHeader('Fermer un floor', sub ? sub.name : '', back);
+    const pre = (state.name && state.name !== 'Manager') ? state.name : '';
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:12px">'+
+      '<div style="padding:16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;flex-direction:column;gap:10px">'+
+        '<div class="mama-title" style="font-size:16px;color:var(--text-primary)">Qui ferme ?</div>'+
+        '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Prénom du manager</label>'+
+        '<input id="fermeture-name-input" type="text" placeholder="Ex: Julie" value="'+esc(pre)+'" autocomplete="off" style="width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid '+(state.fermetureNameError?'var(--border-danger,#E24B4A)':'var(--border)')+';background:var(--surface-0);color:var(--text-primary);font-size:16px">'+
+        (state.fermetureNameError ? '<div style="color:var(--text-danger,#A32D2D);font-size:13px">Indique ton prénom pour continuer.</div>' : '')+
+        '<button onclick="appAction(\'confirmFermetureName\')" style="width:100%;padding:14px;border-radius:10px;font-size:14px;font-weight:800;text-transform:uppercase;cursor:pointer;border:2.5px solid var(--border-strong,#000);box-shadow:3px 3px 0 var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff">Commencer la checklist</button>'+
+      '</div></div>';
+    out += bottomNav('menu');
+    return out;
+  }
+  function screenChecklistesMenu(){
+    let out = requiHubHeader('Checklistes', 'Gérer, consulter, archiver', "appAction('goManagerMenu')");
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:12px">';
+    [
+      { action:'goAdmin', icon:'settings', color:'#FFD500', label:'Modifier une checkliste' },
+      { action:'goHistorique', icon:'clock', color:'#E8432B', fg:'#fff', label:'Historique des checklistes' },
+      { action:'goArchives', icon:'archive', color:'#2AB0C5', fg:'#fff', label:'Archives' }
+    ].forEach(function(o){ out += menuButtonHtml(o); });
+    out += '</div>';
+    out += bottomNav('menu');
+    return out;
+  }
+  function screenArchives(){
+    const mk = state.archiveMonth;
+    const back = mk ? "appAction('backArchives')" : "appAction('goChecklistesMenu')";
+    let out = requiHubHeader(mk ? monthLabelOf(mk) : 'Archives', mk ? 'Archive compressée' : 'Rapports classés par mois', back);
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    if (mk){
+      const d = state.archiveData;
+      if (state.archiveLoading || !d){
+        out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">'+(state.archiveError ? esc(state.archiveError) : 'Chargement de l\'archive…')+'</div>';
+      } else {
+        const data = d.data || {};
+        let total = 0; ARCHIVE_KINDS.forEach(function(k){ total += (data[k.key]||[]).length; });
+        out += '<div style="padding:14px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000)">'+
+          '<div class="mama-title" style="font-size:16px;color:var(--text-primary)">'+total+' rapport'+(total>1?'s':'')+'</div>'+
+          '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px">'+ARCHIVE_KINDS.filter(function(k){ return (data[k.key]||[]).length; }).map(function(k){ return k.label+' : '+data[k.key].length; }).join(' · ')+'</div>'+
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+
+            '<button onclick="appAction(\'exportArchiveCsv\')" style="padding:10px 14px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff;font-size:13px;font-weight:800;text-transform:uppercase;box-shadow:2px 2px 0 var(--border-strong,#000);cursor:pointer">Exporter (CSV)</button>'+
+            '<button onclick="appAction(\'exportArchiveGz\')" style="padding:10px 14px;border-radius:8px;border:2px solid var(--border-strong,#000);background:var(--surface-1);color:var(--text-primary);font-size:13px;font-weight:800;text-transform:uppercase;box-shadow:2px 2px 0 var(--border-strong,#000);cursor:pointer">Archive compressée</button>'+
+          '</div></div>';
+        ARCHIVE_KINDS.forEach(function(k){
+          const items = (data[k.key]||[]).slice().sort(function(a,b){ return (archiveTsOf(b)||0) - (archiveTsOf(a)||0); });
+          if (!items.length) return;
+          out += '<div class="mama-title" style="font-size:13px;color:var(--text-accent,#E8432B);margin-top:6px">'+esc(k.label)+' ('+items.length+')</div>';
+          items.forEach(function(e){
+            out += '<div style="padding:10px 12px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1)">'+
+              '<div style="font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(e.sublieuName||'')+'</div>'+
+              '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+esc(e.categoryName||'')+' · '+esc(e.operator||'')+' · '+esc(e.when||'')+'</div></div>';
+          });
+        });
+      }
+    } else {
+      out += '<div style="padding:12px 14px;border-radius:10px;background:var(--surface-0);font-size:13px;color:var(--text-secondary);line-height:1.5">'+
+        'Chaque mois, les rapports plus anciens que le mois précédent sont <b>classés par mois, compressés et retirés de l\'historique</b> automatiquement (chaque jour, à la première connexion manager). Rien n\'est supprimé : tout reste ici, exportable.</div>';
+      const idx = state.archiveIndex || [];
+      if (!idx.length) out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucune archive pour l\'instant.</div>';
+      idx.forEach(function(m){
+        out += '<div onclick="appAction(\'openArchiveMonth\',\''+m.month+'\')" style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px">'+
+          '<div><div class="mama-title" style="font-size:15px;color:var(--text-primary)">'+esc(monthLabelOf(m.month))+'</div>'+
+          '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">'+m.total+' rapport'+(m.total>1?'s':'')+' · '+Math.max(1,Math.round((m.bytes||0)/1024))+' Ko compressés</div></div>'+
+          icon('chevronRight',18)+'</div>';
+      });
+    }
+    out += '</div>';
+    out += bottomNav('menu');
     return out;
   }
 
@@ -6266,11 +6624,9 @@ window.agAuth = {
     const options = [
       { action:'goProcessInfosRead', icon:'edit', color:'#7A5FE0', fg:'#fff', label:'Process & Infos' },
       { action:'goFermeture', icon:'door', color:'#2AB0C5', fg:'#fff', label:'Fermer un floor' },
-      { action:'goAdmin', icon:'settings', color:'#FFD500', label:'Modifier une checklist' },
-      { action:'goHistorique', icon:'clock', color:'#E8432B', fg:'#fff', label:"Voir l'historique des rapports" },
-      { action:'goManagerPlanning', icon:'event', color:'#FF8AB4', label:"Publier le planning" },
-      { action:'goViewFeedbacks', payload:'managers', icon:'event', color:'#7A5FE0', fg:'#fff', label:'Voir les remontées' },
-      { action:'goEventsFromManagerMenu', icon:'event', color:'#3FAE6A', fg:'#fff', label:'Fiches de fonction (Events)' }
+      { action:'goChecklistesMenu', icon:'clipboard', color:'#FFD500', label:'Checklistes' },
+      { action:'goEventsFromManagerMenu', icon:'event', color:'#3FAE6A', fg:'#fff', label:'Réunion de fonction' },
+      { action:'goViewFeedbacks', payload:'managers', icon:'event', color:'#7A5FE0', fg:'#fff', label:'Voir les remontées' }
     ];
     options.forEach(function(opt){
       const fg = opt.fg || 'var(--text-primary)';
@@ -6791,8 +7147,8 @@ window.agAuth = {
   function screenHistorique(){
     let out = '<div style="padding:20px 16px 8px">'+
       '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
-        '<div onclick="appAction(\'goManagerMenu\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
-        '<h1 class="mama-title" style="font-size:20px;font-weight:800;margin:0;color:var(--text-primary);flex:1">Historique</h1>'+
+        '<div onclick="appAction(\'goChecklistesMenu\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<h1 class="mama-title" style="font-size:20px;font-weight:800;margin:0;color:var(--text-primary);flex:1">Historique des checklistes</h1>'+
       '</div>'+
     '</div>';
 
@@ -7201,7 +7557,7 @@ window.agAuth = {
   function screenAdmin(){
     let out = '<div style="padding:20px 16px 8px">'+
       '<div style="padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000);display:flex;align-items:center;gap:12px">'+
-        '<div onclick="appAction(\'goManagerMenu\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
+        '<div onclick="appAction(\'goChecklistesMenu\')" style="cursor:pointer;color:var(--text-secondary)">'+icon('back',22)+'</div>'+
         '<div style="flex:1"><h1 class="mama-title" style="font-size:20px;font-weight:800;margin:0;color:var(--text-primary)">Managers</h1>'+
         '<p style="color:var(--text-secondary);margin:2px 0 0;font-size:14px">Gérer les catégories, sous-lieux et tâches</p></div>'+
       '</div>'+
@@ -7357,6 +7713,9 @@ window.agAuth = {
     else if (state.screen === 'requi-hub') html = screenRequiHub();
     else if (state.screen === 'bar-messages') html = screenBarMessages();
     else if (state.screen === 'info-pdj') html = screenInfoPdj();
+    else if (state.screen === 'checklistes-menu') html = screenChecklistesMenu();
+    else if (state.screen === 'fermeture-name') html = screenFermetureName();
+    else if (state.screen === 'archives') html = screenArchives();
     else if (state.screen === 'manager-locked') html = screenManagerLocked();
     else if (state.screen === 'other-access-menu') html = screenOtherAccessMenu();
     else if (state.screen === 'access-management') html = screenAccessManagement();
