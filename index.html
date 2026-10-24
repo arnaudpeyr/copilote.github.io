@@ -3884,12 +3884,39 @@ window.appRpc = async function(fn, args){
       state.dutyMsg = (ok ? 'Duty copié ✔ Ouvre un nouveau mail et colle (appui long → Coller).' : 'Impossible de copier : utilise « Ouvrir dans ma messagerie ».') + (saved ? ' Enregistré dans l\'historique.' : ' (Historique : pas de réseau, non enregistré.)');
       renderKeep();
     }
-    else if (action === 'dutyMail'){
+    else if (action === 'dutyShare'){
+      const ok = await dutyCopy();
+      let saved = true; try { await dutyArchive(); } catch(e){ saved = false; }
       let to = ''; try { to = localStorage.getItem('cm_duty_to') || ''; } catch(e){}
-      try { await dutyArchive(); } catch(e){}
+      const cc = state.duty.ccCuisine ? (DUTY_CC.match(/[\w.+-]+@[\w.-]+/g) || []).join(',') : '';
       const subject = 'Duty '+(state.duty.date||'')+' – '+(state.duty.shift||'');
-      window.location.href = 'mailto:'+encodeURIComponent(to).replace(/%40/g,'@').replace(/%2C/g,',')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(dutyText());
+      const q = function(o){ return Object.keys(o).filter(function(k){ return o[k]; }).map(function(k){ return k+'='+encodeURIComponent(o[k]); }).join('&'); };
+      const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'');
+      const url = mobile ? 'ms-outlook://compose?'+q({to:to, cc:cc, subject:subject})
+                         : 'https://outlook.office.com/mail/deeplink/compose?'+q({to:to, cc:cc, subject:subject});
+      state.dutyMsg = (ok ? 'Duty copié ✔ Colle-le dans le mail (appui long → Coller).' : 'Copie impossible : ouvre l\'historique pour récupérer le texte.') + (saved ? '' : ' (Historique non enregistré : pas de réseau.)');
+      renderKeep();
+      if (mobile){
+        // Si l'app Outlook n'est pas installée, on bascule sur la messagerie du téléphone.
+        const t0 = Date.now(); let left = false;
+        const onHide = function(){ left = true; };
+        document.addEventListener('visibilitychange', onHide, { once:true });
+        window.location.href = url;
+        setTimeout(function(){ if (!left && !document.hidden){ window.location.href = 'mailto:'+to+'?'+q({cc:cc, subject:subject}); } }, 1800);
+      } else { window.open(url, '_blank'); }
     }
+    else if (action === 'dutyAdd'){
+      const p = String(payload).split(':');
+      if (p[0] === 'staff'){ state.duty.staff[+p[1]].push({p:'',r:'',tm:''}); }
+      else { const tpl = {anim:{nom:'',retour:'',dance:''}, groupes:{nom:'',guests:'',rem:''}, plaintes:{nom:'',detail:'',solution:''}}[p[0]]; state.duty[p[0]].push(JSON.parse(JSON.stringify(tpl))); }
+      dutySave(); renderKeep();
+    }
+    else if (action === 'dutyDel'){
+      const p = String(payload).split(':'); const path = p[0].split('.'); let arr = state.duty[path[0]];
+      if (path.length > 1) arr = arr[+path[1]];
+      if (arr.length > 1){ arr.splice(+p[1], 1); dutySave(); renderKeep(); }
+    }
+    else if (action === 'dutyStaffToggle'){ state.dutyStaffOpen = state.dutyStaffOpen || {}; state.dutyStaffOpen[payload] = !state.dutyStaffOpen[payload]; renderKeep(); }
     else if (action === 'dutyShift'){ state.duty.shift = payload; dutySave(); renderKeep(); }
     else if (action === 'goDutyHistory'){
       state.dutyList = null; state.dutyMsg = ''; state.screen = 'duty-history'; render();
@@ -3899,7 +3926,7 @@ window.appRpc = async function(fn, args){
     else if (action === 'openDuty'){ state.dutyViewId = payload; state.dutyMsg = ''; state.screen = 'duty-view'; render(); }
     else if (action === 'dutyEdit'){
       const x = (state.dutyList||[]).find(function(y){ return y.id === payload; });
-      if (x && x.data){ state.duty = JSON.parse(JSON.stringify(x.data)); dutySave(); state.dutyMsg = ''; state.screen = 'duty'; render(); }
+      if (x && x.data){ state.duty = dutyNormalize(JSON.parse(JSON.stringify(x.data))); dutySave(); state.dutyMsg = ''; state.screen = 'duty'; render(); }
     }
     else if (action === 'dutyResetAsk'){ state.dutyConfirmReset = true; renderKeep(); }
     else if (action === 'dutyResetCancel'){ state.dutyConfirmReset = false; renderKeep(); }
@@ -7111,7 +7138,7 @@ window.appRpc = async function(fn, args){
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:12px">';
     const options = [
       { action:'goMorning', icon:'clipboard', color:'#E8432B', fg:'#fff', label:'Vue du matin' },
-      { action:'goDuty', icon:'edit', color:'#2AB0C5', fg:'#fff', label:'Duty de fin de shift' },
+      { action:'goDuty', icon:'edit', color:'#FF9F43', fg:'#fff', label:'Duty' },
       { action:'goProcessInfosRead', icon:'edit', color:'#7A5FE0', fg:'#fff', label:'Process & Infos' },
       { action:'goFermeture', icon:'door', color:'#2AB0C5', fg:'#fff', label:'Fermer un floor' },
       { action:'goChecklistesMenu', icon:'clipboard', color:'#FFD500', label:'Checklistes' },
@@ -7157,18 +7184,30 @@ window.appRpc = async function(fn, args){
     {k:'departs', t:'Heure de départ du staff'}
   ];
   function dutyToday(){ const d = new Date(); return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear(); }
+  const DUTY_CC = 'Nicolas HELLEU <nicolas.helleu@mamashelter.com>; Erwan LANGRY <Erwan.LANGRY@mamashelter.com>; Mohammed MOUSTAKIM <Mohammed.MOUSTAKIM@mamashelter.com>';
   function dutyBlank(){
     const arr = function(n, o){ const a = []; for (let i=0;i<n;i++) a.push(JSON.parse(JSON.stringify(o))); return a; };
     return { date: dutyToday(), shift: (new Date().getHours() < 17 ? 'AM' : 'PM'),
       ressenti:'', ambiance:'', mgr:{rdc:'',roof:'',bar:'',hotesses:''},
       chiffres:{resto:{c:'',ca:''}, event:{c:'',ca:''}, bar:{c:'',ca:''}, roof:{ca:''}},
-      anim:{nom:'',retour:'',dance:''}, staff: arr(DUTY_ZONES.length,{p:'',r:'',tm:''}),
-      groupes: arr(3,{nom:'',guests:'',rem:''}), infos:{celine:'',loic:''},
-      plaintes: arr(2,{nom:'',detail:'',solution:''}), ruptures:{bar:'',cuisine:''},
-      cuisine:'', passation:{ateliers:'',autres:''}, departs:{salle:'',bar:'',roof:''} };
+      anim:[{nom:'',retour:'',dance:''}],
+      staff: DUTY_ZONES.map(function(){ return [{p:'',r:'',tm:''}]; }),
+      groupes:[{nom:'',guests:'',rem:''}], infos:{celine:'',loic:''},
+      plaintes:[{nom:'',detail:'',solution:''}], ruptures:{bar:'',cuisine:''},
+      cuisine:'', cuisineRem:'', ccCuisine:true, passation:{ateliers:'',autres:''}, departs:{salle:'',bar:'',roof:''} };
+  }
+  function dutyNormalize(d){
+    const b = dutyBlank();
+    Object.keys(b).forEach(function(k){ if (d[k] === undefined) d[k] = b[k]; });
+    if (!Array.isArray(d.anim)) d.anim = [d.anim];
+    if (!Array.isArray(d.groupes) || !d.groupes.length) d.groupes = b.groupes;
+    if (!Array.isArray(d.plaintes) || !d.plaintes.length) d.plaintes = b.plaintes;
+    if (!Array.isArray(d.staff)) d.staff = b.staff;
+    DUTY_ZONES.forEach(function(z,i){ if (!Array.isArray(d.staff[i])) d.staff[i] = d.staff[i] ? [d.staff[i]] : [{p:'',r:'',tm:''}]; if (!d.staff[i].length) d.staff[i] = [{p:'',r:'',tm:''}]; });
+    return d;
   }
   function dutyLoad(){
-    try { const d = JSON.parse(localStorage.getItem('cm_duty_draft')||'null'); if (d && d.date) return d; } catch(e){}
+    try { const d = JSON.parse(localStorage.getItem('cm_duty_draft')||'null'); if (d && d.date) return dutyNormalize(d); } catch(e){}
     return dutyBlank();
   }
   function dutySave(){ try { localStorage.setItem('cm_duty_draft', JSON.stringify(state.duty)); } catch(e){} }
@@ -7211,9 +7250,11 @@ window.appRpc = async function(fn, args){
     L.push('Bar : '+v(d.chiffres.bar.c)+' couverts · '+v(d.chiffres.bar.ca)+' K€ HT');
     L.push('Roof : non · '+v(d.chiffres.roof.ca)+' K€ HT');
     L.push('Total : '+x.couverts+' couverts · '+x.ca+' K€ HT'); L.push('');
-    L.push('5. Animation :'); L.push('Nom de l\'animation / du DJ : '+v(d.anim.nom)); L.push('Retour sur la prestation : '+v(d.anim.retour)); L.push('Dance floor ? '+v(d.anim.dance)); L.push('');
+    L.push('5. Animation :');
+    d.anim.forEach(function(a){ if (dutyHasVal(a)){ L.push('Nom de l\'animation / du DJ : '+v(a.nom)); L.push('Retour sur la prestation : '+v(a.retour)); L.push('Dance floor ? '+v(a.dance)); L.push(''); } });
+    if (!d.anim.some(dutyHasVal)) L.push('');
     L.push('6. Point staff (Attribution des rangs, comportement, qualité de travail) :');
-    DUTY_ZONES.forEach(function(z,i){ const s = d.staff[i]; if (dutyHasVal(s)) L.push('- '+z+' : '+v(s.p)+(v(s.r)?' — '+v(s.r):'')+(v(s.tm)?' (TM : '+v(s.tm)+')':'')); });
+    DUTY_ZONES.forEach(function(z,i){ d.staff[i].forEach(function(s){ if (dutyHasVal(s)) L.push('- '+z+' : '+v(s.p)+(v(s.r)?' — '+v(s.r):'')+(v(s.tm)?' (TM : '+v(s.tm)+')':'')); }); });
     L.push('');
     L.push('7. Noms et retours sur les groupes (resto et Events) :');
     d.groupes.forEach(function(g){ if (dutyHasVal(g)) L.push('- '+v(g.nom)+' · '+v(g.guests)+' guests · '+v(g.rem)); });
@@ -7223,7 +7264,9 @@ window.appRpc = async function(fn, args){
     d.plaintes.forEach(function(p){ if (dutyHasVal(p)) L.push('- '+v(p.nom)+' · '+v(p.detail)+' · Solution : '+v(p.solution)); });
     L.push('');
     L.push('10. Rupture bar & cuisine :'); L.push('Rupture BAR : '+v(d.ruptures.bar)); L.push('Rupture CUISINE : '+v(d.ruptures.cuisine)); L.push('');
-    L.push('11. Point sur la cuisine : '+(d.cuisine==='pas'?'PAS D\'ATTENTE':(d.cuisine==='moyenne'?'ATTENTE MOYENNE':(d.cuisine==='trop'?'TROP D\'ATTENTE':'')))); L.push('');
+    L.push('11. Point sur la cuisine : '+(d.cuisine==='pas'?'PAS D\'ATTENTE':(d.cuisine==='moyenne'?'ATTENTE MOYENNE':(d.cuisine==='trop'?'TROP D\'ATTENTE':''))));
+    if (v(d.cuisineRem)) L.push('Remarques : '+v(d.cuisineRem));
+    L.push('');
     L.push('12. Passation d\'informations managers :'); L.push('Ateliers : '+v(d.passation.ateliers)); L.push('Autres infos : '+v(d.passation.autres)); L.push('');
     L.push('13. Heure de départ du staff :'); L.push('Salle : '+v(d.departs.salle)); L.push('Bar : '+v(d.departs.bar)); L.push('Roof : '+v(d.departs.roof));
     return L.join('\n');
@@ -7240,14 +7283,16 @@ window.appRpc = async function(fn, args){
     o += h('2. Ressenti feeling / ambiance équipe :')+'<p>'+e(d.ambiance)+'</p>';
     o += h('3. Manager(s) présent(s) :')+'<p>Manager RDC : '+e(d.mgr.rdc)+'<br>Manager Roof : '+e(d.mgr.roof)+'<br>Manager Bar : '+e(d.mgr.bar)+'<br>Hôtesse(s) : '+e(d.mgr.hotesses)+'</p>';
     o += h('4. Chiffres :')+tbl(['Zone','Nb de couverts','CA HT en K€'],[['Restaurant',e(d.chiffres.resto.c),e(d.chiffres.resto.ca)],['Event',e(d.chiffres.event.c),e(d.chiffres.event.ca)],['Bar',e(d.chiffres.bar.c),e(d.chiffres.bar.ca)],['Roof','non',e(d.chiffres.roof.ca)],['<b>Total</b>','<b>'+x.couverts+'</b>','<b>'+x.ca+'</b>']]);
-    o += h('5. Animation :')+tbl(['',''],[['Nom de l\'animation / du DJ',e(d.anim.nom)],['Retour sur la prestation',e(d.anim.retour)],['Dance floor ?',e(d.anim.dance)]]);
-    o += h('6. Point staff (Attribution des rangs, comportement, qualité de travail) :')+tbl(['ZONES','PRÉNOM(S)','REMARQUE(S)','TM'], DUTY_ZONES.map(function(z,i){ const s = d.staff[i]; return [z,e(s.p),e(s.r),e(s.tm)]; }));
+    let animRows = []; d.anim.forEach(function(a){ animRows.push(['Nom de l\'animation / du DJ',e(a.nom)],['Retour sur la prestation',e(a.retour)],['Dance floor ?',e(a.dance)]); });
+    o += h('5. Animation :')+tbl(['',''],animRows);
+    let staffRows = []; DUTY_ZONES.forEach(function(z,i){ d.staff[i].forEach(function(s, j){ if (j === 0 || dutyHasVal(s)) staffRows.push([j===0?z:'',e(s.p),e(s.r),e(s.tm)]); }); });
+    o += h('6. Point staff (Attribution des rangs, comportement, qualité de travail) :')+tbl(['ZONES','PRÉNOM(S)','REMARQUE(S)','TM'], staffRows);
     o += h('7. Noms et retours sur les groupes (resto et Events) :')+tbl(['Nom du groupe','Nombre de guests','Remarques'], d.groupes.map(function(g){ return [e(g.nom),e(g.guests),e(g.rem)]; }));
     o += h('8. Informations à transmettre :')+'<p><b>@céline</b> (Voucher ? PSP ?) : '+e(d.infos.celine)+'<br><b>@loic</b> (Incident technique, élément HS) : '+e(d.infos.loic)+'</p>';
     o += h('9. Retours et plaintes clients :')+tbl(['Nom / Table','Détail de la plainte','Solution apportée'], d.plaintes.map(function(p){ return [e(p.nom),e(p.detail),e(p.solution)]; }));
     o += h('10. Rupture bar & cuisine :')+'<p>Rupture BAR : '+e(d.ruptures.bar)+'<br>Rupture CUISINE : '+e(d.ruptures.cuisine)+'</p>';
     const cx = function(k){ return d.cuisine===k ? 'X' : ''; };
-    o += h('11. Point sur la cuisine :')+tbl(['PAS D\'ATTENTE','ATTENTE MOYENNE','TROP D\'ATTENTE'],[[cx('pas'),cx('moyenne'),cx('trop')]]);
+    o += h('11. Point sur la cuisine :')+tbl(['PAS D\'ATTENTE','ATTENTE MOYENNE','TROP D\'ATTENTE'],[[cx('pas'),cx('moyenne'),cx('trop')]])+(String(d.cuisineRem||'').trim() ? '<p>Remarques : '+e(d.cuisineRem)+'</p>' : '');
     o += h('12. Passation d\'informations managers :')+'<p>Ateliers : '+e(d.passation.ateliers)+'<br>Autres infos : '+e(d.passation.autres)+'</p>';
     o += h('13. Heure de départ du staff :')+tbl(['ZONE','HEURE DE DÉPART'],[['Salle',e(d.departs.salle)],['Bar',e(d.departs.bar)],['Roof',e(d.departs.roof)]]);
     return o+'</div>';
@@ -7283,15 +7328,24 @@ window.appRpc = async function(fn, args){
       return z('Restaurant','resto',true)+z('Event','event',true)+z('Bar','bar',true)+z('Roof','roof',false)+
         '<div id="duty-total" style="padding:10px 12px;border-radius:10px;background:var(--surface-1);border:2px solid var(--border-strong,#000);font-weight:800;font-size:14px;text-align:center">'+x.couverts+' couverts · '+x.ca+' K€ HT</div>';
     }
-    if (k==='anim') return dutyField('Nom de l\'animation / du DJ', dutyInput('anim.nom',''))+dutyField('Retour sur la prestation', dutyArea('anim.retour','',2))+dutyField('Dance floor ?', dutyInput('anim.dance','Oui / Non / …'));
-    if (k==='staff') return DUTY_ZONES.map(function(z,i){ return '<div style="padding:10px;margin:0 0 8px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface-0)"><div style="font-size:13px;font-weight:800;margin:0 0 6px">'+z+'</div>'+dutyInput('staff.'+i+'.p','Prénom(s)','margin-bottom:6px')+dutyInput('staff.'+i+'.r','Remarque(s)','margin-bottom:6px')+dutyInput('staff.'+i+'.tm','TM')+'</div>'; }).join('');
-    if (k==='groupes') return '<div style="font-size:12px;color:var(--text-secondary);margin:0 0 8px">Mettre @morgane et @event en copie si nécessaire.</div>'+[0,1,2].map(function(i){ return '<div style="padding:10px;margin:0 0 8px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface-0)">'+dutyInput('groupes.'+i+'.nom','Nom du groupe','margin-bottom:6px')+dutyInput('groupes.'+i+'.guests','Nombre de guests','margin-bottom:6px')+dutyInput('groupes.'+i+'.rem','Remarques')+'</div>'; }).join('');
+    const del = function(k,i){ return state.duty[k].length > 1 ? '<span onclick="appAction(\'dutyDel\',\''+k+':'+i+'\')" style="float:right;min-width:44px;min-height:44px;margin:-10px -10px 0 0;display:flex;align-items:center;justify-content:center;color:var(--text-danger,#A32D2D);font-size:20px;font-weight:800;cursor:pointer">×</span>' : ''; };
+    if (k==='anim') return state.duty.anim.map(function(a,i){ return '<div style="padding:10px;margin:0 0 8px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface-0)">'+del('anim',i)+dutyField('Nom de l\'animation / du DJ', dutyInput('anim.'+i+'.nom',''))+dutyField('Retour sur la prestation', dutyArea('anim.'+i+'.retour','',2))+dutyField('Dance floor ?', dutyInput('anim.'+i+'.dance','Oui / Non / …'))+'</div>'; }).join('')+'<button type="button" onclick="appAction(\'dutyAdd\',\'anim\')" style="width:100%;min-height:44px;margin:0;border-radius:10px;border:2px dashed var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:14px;font-weight:800;cursor:pointer">＋ Ajouter une animation</button>';
+    if (k==='staff') return DUTY_ZONES.map(function(z,i){
+      const open = (state.dutyStaffOpen||{})[i]; const n = state.duty.staff[i].filter(dutyHasVal).length;
+      return '<div style="margin:0 0 8px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface-0);overflow:hidden">'+
+        '<div onclick="appAction(\'dutyStaffToggle\','+i+')" style="display:flex;align-items:center;gap:8px;padding:12px;min-height:48px;cursor:pointer"><span style="flex:1;font-size:14px;font-weight:800">'+z+'</span>'+(n?'<span style="background:#3FAE6A;color:#fff;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:800">'+n+'</span>':'')+'<span style="transform:rotate('+(open?'90':'0')+'deg)">'+icon('chevronRight',16)+'</span></div>'+
+        (open ? '<div style="padding:0 10px 10px">'+state.duty.staff[i].map(function(s,j){ return '<div style="padding:8px;margin:0 0 8px;border-radius:8px;border:1px dashed var(--border)">'+(state.duty.staff[i].length>1?'<span onclick="appAction(\'dutyDel\',\'staff.'+i+':'+j+'\')" style="float:right;min-width:44px;min-height:32px;margin:-6px -6px 0 0;display:flex;align-items:center;justify-content:center;color:var(--text-danger,#A32D2D);font-size:20px;font-weight:800;cursor:pointer">×</span>':'')+dutyInput('staff.'+i+'.'+j+'.p','Prénom(s)','margin-bottom:6px')+dutyInput('staff.'+i+'.'+j+'.r','Remarque(s)','margin-bottom:6px')+dutyInput('staff.'+i+'.'+j+'.tm','TM')+'</div>'; }).join('')+
+          '<button type="button" onclick="appAction(\'dutyAdd\',\'staff:'+i+'\')" style="width:100%;min-height:44px;border-radius:10px;border:2px dashed var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:13px;font-weight:800;cursor:pointer">＋ Ajouter une ligne ('+z+')</button></div>' : '')+
+      '</div>'; }).join('');
+    if (k==='groupes') return '<div style="font-size:12px;color:var(--text-secondary);margin:0 0 8px">Mettre @morgane et @event en copie si nécessaire.</div>'+state.duty.groupes.map(function(g,i){ return '<div style="padding:10px;margin:0 0 8px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface-0)">'+del('groupes',i)+dutyInput('groupes.'+i+'.nom','Nom du groupe','margin-bottom:6px')+dutyInput('groupes.'+i+'.guests','Nombre de guests','margin-bottom:6px')+dutyInput('groupes.'+i+'.rem','Remarques')+'</div>'; }).join('')+'<button type="button" onclick="appAction(\'dutyAdd\',\'groupes\')" style="width:100%;min-height:44px;margin:0;border-radius:10px;border:2px dashed var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:14px;font-weight:800;cursor:pointer">＋ Ajouter un groupe</button>';
     if (k==='infos') return dutyField('@céline — Voucher ? PSP ?', dutyArea('infos.celine','',2))+dutyField('@loic — Incident technique, élément HS', dutyArea('infos.loic','',2));
-    if (k==='plaintes') return [0,1].map(function(i){ return '<div style="padding:10px;margin:0 0 8px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface-0)">'+dutyInput('plaintes.'+i+'.nom','Nom / Table','margin-bottom:6px')+dutyArea('plaintes.'+i+'.detail','Détail de la plainte',2)+'<div style="height:6px"></div>'+dutyArea('plaintes.'+i+'.solution','Solution apportée',2)+'</div>'; }).join('');
+    if (k==='plaintes') return state.duty.plaintes.map(function(p,i){ return '<div style="padding:10px;margin:0 0 8px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface-0)">'+del('plaintes',i)+dutyInput('plaintes.'+i+'.nom','Nom / Table','margin-bottom:6px')+dutyArea('plaintes.'+i+'.detail','Détail de la plainte',2)+'<div style="height:6px"></div>'+dutyArea('plaintes.'+i+'.solution','Solution apportée',2)+'</div>'; }).join('')+'<button type="button" onclick="appAction(\'dutyAdd\',\'plaintes\')" style="width:100%;min-height:44px;margin:0;border-radius:10px;border:2px dashed var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:14px;font-weight:800;cursor:pointer">＋ Ajouter une plainte</button>';
     if (k==='ruptures') return dutyField('Rupture BAR', dutyArea('ruptures.bar','',2))+dutyField('Rupture CUISINE', dutyArea('ruptures.cuisine','',2));
     if (k==='cuisine'){
       const opts = [['pas','Pas d\'attente','#3FAE6A','#fff'],['moyenne','Attente moyenne','#FFD500','#1A1A1A'],['trop','Trop d\'attente','#E8432B','#fff']];
-      return '<div style="font-size:12px;color:var(--text-secondary);margin:0 0 8px">Mettre @Nicolas en copie.</div><div style="display:flex;gap:8px">'+opts.map(function(o){ const on = state.duty.cuisine === o[0]; return '<button type="button" onclick="appAction(\'dutyCuisine\',\''+(on?'':o[0])+'\')" style="flex:1;min-height:48px;padding:6px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:'+(on?o[2]:'var(--surface-0)')+';color:'+(on?o[3]:'var(--text-primary)')+';font-size:13px;font-weight:800;cursor:pointer;'+(on?'box-shadow:2px 2px 0 #000':'')+'">'+o[1]+'</button>'; }).join('')+'</div>';
+      return '<div style="display:flex;gap:8px">'+opts.map(function(o){ const on = state.duty.cuisine === o[0]; return '<button type="button" onclick="appAction(\'dutyCuisine\',\''+(on?'':o[0])+'\')" style="flex:1;min-height:48px;padding:6px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:'+(on?o[2]:'var(--surface-0)')+';color:'+(on?o[3]:'var(--text-primary)')+';font-size:13px;font-weight:800;cursor:pointer;'+(on?'box-shadow:2px 2px 0 #000':'')+'">'+o[1]+'</button>'; }).join('')+'</div>'+
+        '<div style="height:10px"></div>'+dutyArea('cuisineRem','Remarques sur la cuisine…',3)+
+        '<label style="display:flex;align-items:flex-start;gap:10px;margin:10px 0 0;font-size:13px;color:var(--text-primary);cursor:pointer"><input type="checkbox" '+(state.duty.ccCuisine?'checked ':'')+'onchange="dutySet(\'ccCuisine\',this.checked)" style="width:22px;height:22px;flex-shrink:0"><span>Mettre en copie Nicolas, Erwan et Mohammed</span></label>';
     }
     if (k==='passation') return dutyField('Ateliers ?', dutyArea('passation.ateliers','',2))+dutyField('Autres infos ?', dutyArea('passation.autres','',3));
     if (k==='departs') return dutyField('Salle', dutyInput('departs.salle','Ex : 00h30'))+dutyField('Bar', dutyInput('departs.bar','Ex : 01h00'))+dutyField('Roof', dutyInput('departs.roof','Ex : 01h30'));
@@ -7336,7 +7390,7 @@ window.appRpc = async function(fn, args){
   function screenDuty(){
     if (!state.duty) state.duty = dutyLoad();
     const open = state.dutyOpen || {};
-    let out = requiHubHeader('Duty de fin de shift', 'Remplis, puis copie ou ouvre le mail', "appAction('goManagerMenu')");
+    let out = requiHubHeader('Duty', 'Remplis, puis partage dans Outlook', "appAction('goManagerMenu')");
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
     out += '<div style="padding:12px;border-radius:12px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);display:grid;grid-template-columns:2fr 1fr;gap:8px">'+
       dutyField('Date', dutyInput('date','jj/mm/aaaa'))+dutyField('Shift', '<div style="display:flex;gap:6px">'+['AM','PM'].map(function(sh){ const on = state.duty.shift === sh; return '<button type="button" onclick="appAction(\'dutyShift\',\''+sh+'\')" style="flex:1;min-height:44px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:'+(on?'#FFD500':'var(--surface-0)')+';color:#1A1A1A;font-size:14px;font-weight:800;cursor:pointer">'+sh+'</button>'; }).join('')+'</div>')+'</div>';
@@ -7355,11 +7409,10 @@ window.appRpc = async function(fn, args){
     let to = ''; try { to = localStorage.getItem('cm_duty_to') || ''; } catch(e){}
     out += '<div style="padding:12px;border-radius:12px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1)">'+
       dutyField('Destinataire(s) du mail', '<input type="text" value="'+esc(to)+'" placeholder="prenom.nom@exemple.com" oninput="try{localStorage.setItem(\'cm_duty_to\',this.value)}catch(e){}" style="width:100%;box-sizing:border-box;padding:11px;border-radius:10px;border:1.5px solid var(--border-strong,var(--border));background:var(--surface-0);color:var(--text-primary);font-size:15px">')+
-      '<button onclick="appAction(\'dutyCopy\')" style="width:100%;padding:14px;margin:0 0 8px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#FFD500;color:#1A1A1A;font-size:14px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 #000;cursor:pointer">Copier le duty</button>'+
-      '<button onclick="appAction(\'dutyMail\')" style="width:100%;padding:14px;margin:0 0 8px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#FF6FA5;color:#fff;font-size:14px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 #000;cursor:pointer">Ouvrir dans ma messagerie</button>'+
+      '<button onclick="appAction(\'dutyShare\')" style="width:100%;padding:16px;margin:0 0 8px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#FF6FA5;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 #000;cursor:pointer">Partager le duty</button>'+
       (state.dutyMsg ? '<div style="padding:10px;border-radius:10px;background:#E6F4EA;color:#1E6B34;font-size:13px;font-weight:700;margin:0 0 8px">'+esc(state.dutyMsg)+'</div>' : '')+
       '<button onclick="appAction(\'goDutyHistory\')" style="width:100%;padding:12px;margin:0 0 8px;border-radius:10px;border:2px solid var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer">Voir les duties précédents</button>'+
-      '<div style="font-size:12px;color:var(--text-secondary);margin:0 0 10px">« Copier » garde les tableaux : colle ensuite dans un nouveau mail. « Ouvrir dans ma messagerie » prépare un mail en texte simple.</div>'+
+      '<div style="font-size:12px;color:var(--text-secondary);margin:0 0 10px">« Partager » copie le duty (avec les tableaux) puis ouvre Outlook : il n\'y a plus qu\'à coller dans le mail.</div>'+
       (state.dutyConfirmReset ?
         '<div style="display:flex;gap:8px"><button onclick="appAction(\'dutyReset\')" style="flex:1;padding:12px;border-radius:10px;border:2px solid #A32D2D;background:#A32D2D;color:#fff;font-weight:800;cursor:pointer">Oui, tout vider</button><button onclick="appAction(\'dutyResetCancel\')" style="flex:1;padding:12px;border-radius:10px;border:2px solid var(--border-strong,#000);background:var(--surface-0);font-weight:800;cursor:pointer;color:var(--text-primary)">Annuler</button></div>' :
         '<button onclick="appAction(\'dutyResetAsk\')" style="width:100%;padding:12px;border-radius:10px;border:2px solid var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer">Nouveau duty (vider le formulaire)</button>')+
