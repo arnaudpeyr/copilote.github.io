@@ -5042,10 +5042,6 @@ window.appRpc = async function(fn, args){
       return '<span class="script-letter" style="animation-delay:'+(i*0.22)+'s">'+ch+'</span>';
     }).join('');
     const quickRoles = [
-      {action:'chooseManager', label:'Manager', color:'var(--bg-accent,#FFD500)', fg:'#1A1A1A', icon:'settings'},
-      {action:'chooseEconome', label:'Économe', color:'#2AB0C5', fg:'#fff', icon:'euro'},
-      {action:'chooseEntertainment', label:'Enter.', color:'#FF8AB4', fg:'#1A1A1A', icon:'mask'},
-      {action:'chooseTechnique', label:'Techn.', color:'#FF9F43', fg:'#fff', icon:'tool'},
       {action:'chooseNight', label:'Night', color:'#2F3E7E', fg:'#fff', icon:'moon'},
       {action:'chooseAdmin', label:'Admin', color:'#1A1A1A', fg:'#fff', icon:'lock'}
     ];
@@ -7226,9 +7222,6 @@ window.appRpc = async function(fn, args){
 
   function screenOtherAccessMenu(){
     const roles = [
-      { action:'chooseManager', icon:'settings', color:'var(--bg-accent,#FFD500)', fg:'var(--text-primary)', label:'Accès manager' },
-      { action:'chooseEconome', icon:'archive', color:'#2AB0C5', fg:'#fff', label:'Accès Économe' },
-      { action:'chooseEntertainment', icon:'event', color:'#FF8AB4', fg:'#1A1A1A', label:'Accès Entertainment' },
       { action:'chooseAdmin', icon:'lock', color:'#1A1A1A', fg:'#fff', label:'Accès Admin' }
     ];
     let out = '<div style="padding:20px 16px 8px">'+
