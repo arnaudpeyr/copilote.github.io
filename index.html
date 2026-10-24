@@ -1137,6 +1137,7 @@ window.appRpc = async function(fn, args){
     gangRoles: [],
     techniqueFromGang: false,
     entertainmentFromGang: false,
+    economeFromGang: false,
     techniqueLoginCodeError: false,
     nightUnlocked: false,
     nightLoginCodeError: false,
@@ -2262,7 +2263,7 @@ window.appRpc = async function(fn, args){
   }
 
   const SESSION_SNAPSHOT_KEY = 'copilote_session_snapshot';
-  const SESSION_SNAPSHOT_FIELDS = ['name','gangRoles','techniqueFromGang','entertainmentFromGang','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','agm','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','prestationDraftZoneOther','prestationDraftType','prestationDraftTypeOther','entertainmentEditingId','entFormDate','entFormType','entFormInfo','entFormPlace','cameFromManagerMenu','suiviFrom','requiHubFrom','requiHubStep','requiViaHub','followMode','categoryId','sublieuId'];
+  const SESSION_SNAPSHOT_FIELDS = ['name','gangRoles','techniqueFromGang','entertainmentFromGang','economeFromGang','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','agm','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','prestationDraftZoneOther','prestationDraftType','prestationDraftTypeOther','entertainmentEditingId','entFormDate','entFormType','entFormInfo','entFormPlace','cameFromManagerMenu','suiviFrom','requiHubFrom','requiHubStep','requiViaHub','followMode','categoryId','sublieuId'];
   function compressImageDataUrl(dataUrl, maxWidth, quality){
     return new Promise(function(resolve){
       try {
@@ -2589,10 +2590,23 @@ window.appRpc = async function(fn, args){
     state.screen = 'view-feedbacks';
   }
 
+  async function enterEconomeSpace(){
+    state.economeLoginCodeError = false;
+    state.economeUnlocked = true;
+    const [requisitions, feedbackCounts] = await Promise.all([getRequisitions(), getFeedbackCountsCache()]);
+    state.requisitions = requisitions;
+    state.feedbackCounts = feedbackCounts;
+    state.economeDay = null;
+    state.economeReportId = null;
+    state.requiHubFrom = 'econome';
+    state.requiHubStep = 'menu';
+    state.screen = 'requi-hub';
+  }
   function extraRolesFromForm(){
     const r = [];
     const t = document.getElementById('access-user-extra-technique'); if (t && t.checked) r.push('technique');
     const e = document.getElementById('access-user-extra-entertainment'); if (e && e.checked) r.push('entertainment');
+    const ec = document.getElementById('access-user-extra-econome'); if (ec && ec.checked) r.push('econome');
     return r;
   }
   async function enterEntertainmentSpace(){
@@ -2783,17 +2797,9 @@ window.appRpc = async function(fn, args){
       const code = (input.value||'').trim();
       const matchE = await serverLogin('econome', code);
       if (matchE.ok){
-        state.economeLoginCodeError = false;
-        state.economeUnlocked = true;
         if (matchE.name) state.name = matchE.name;
-        const [requisitions, feedbackCounts] = await Promise.all([getRequisitions(), getFeedbackCountsCache()]);
-        state.requisitions = requisitions;
-        state.feedbackCounts = feedbackCounts;
-        state.economeDay = null;
-        state.economeReportId = null;
-        state.requiHubFrom = 'econome';
-        state.requiHubStep = 'menu';
-        state.screen = 'requi-hub';
+        state.economeFromGang = false;
+        await enterEconomeSpace();
       } else {
         state.economeLoginCodeError = true;
       }
@@ -3151,7 +3157,7 @@ window.appRpc = async function(fn, args){
       }
     }
     else if (action === 'logout'){
-      state.gangRoles = []; state.techniqueFromGang = false; state.entertainmentFromGang = false;
+      state.gangRoles = []; state.techniqueFromGang = false; state.entertainmentFromGang = false; state.economeFromGang = false;
       state.name=''; state.managerUnlocked=false; state.economeUnlocked=false; state.entertainmentUnlocked=false; state.eventsUnlocked=false; state.rhUnlocked=false; state.adminUnlocked=false; state.techniqueUnlocked=false; state.nightUnlocked=false; state.cameFromManagerMenu=false; state.loginStep='simple'; state.screen='login';
       try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(SESSION_SNAPSHOT_KEY); } catch(e){}
       render();
@@ -3397,6 +3403,13 @@ window.appRpc = async function(fn, args){
         state.lockedFor = 'planning';
         state.screen = 'manager-locked';
       }
+      render();
+    }
+    else if (action === 'goRhFromManagerMenu'){
+      state.rhEvents = await getRhEvents();
+      state.rhEditingId = null;
+      state.cameFromManagerMenu = true;
+      state.screen = 'rh-list';
       render();
     }
     else if (action === 'goEventsFromManagerMenu'){
@@ -3857,6 +3870,11 @@ window.appRpc = async function(fn, args){
         await enterTechniqueSpace();
         render();
       }
+      else if (payload === 'econome' && (state.gangRoles || []).indexOf('econome') >= 0){
+        state.economeFromGang = true;
+        await enterEconomeSpace();
+        render();
+      }
       else if (payload === 'entertainment' && (state.gangRoles || []).indexOf('entertainment') >= 0){
         state.entertainmentFromGang = true;
         await enterEntertainmentSpace();
@@ -3866,6 +3884,7 @@ window.appRpc = async function(fn, args){
     else if (action === 'leaveRoleSpace'){
       state.entertainmentUnlocked = false; state.entertainmentFromGang = false;
       state.techniqueUnlocked = false; state.techniqueFromGang = false;
+      state.economeUnlocked = false; state.economeFromGang = false; state.requiHubFrom = null; state.requiHubStep = 'menu';
       await appActionInner('goHome');
     }
     else if (action === 'backFromFeedbacks'){
@@ -4991,8 +5010,6 @@ window.appRpc = async function(fn, args){
       {action:'chooseManager', label:'Manager', color:'var(--bg-accent,#FFD500)', fg:'#1A1A1A', icon:'settings'},
       {action:'chooseEconome', label:'Économe', color:'#2AB0C5', fg:'#fff', icon:'euro'},
       {action:'chooseEntertainment', label:'Enter.', color:'#FF8AB4', fg:'#1A1A1A', icon:'mask'},
-      {action:'chooseEvents', label:'Events', color:'#7A5FE0', fg:'#fff', icon:'event'},
-      {action:'chooseRH', label:'RH', color:'#3FAE6A', fg:'#fff', icon:'heart'},
       {action:'chooseTechnique', label:'Techn.', color:'#FF9F43', fg:'#fff', icon:'tool'},
       {action:'chooseNight', label:'Night', color:'#2F3E7E', fg:'#fff', icon:'moon'},
       {action:'chooseAdmin', label:'Admin', color:'#1A1A1A', fg:'#fff', icon:'lock'}
@@ -5248,6 +5265,16 @@ window.appRpc = async function(fn, args){
         '<div style="flex:1"><div class="mama-title" style="font-size:15px;color:#fff">Espace Technique</div>'+
         '<div style="font-size:12px;opacity:.9;margin-top:2px">Remontées techniques</div></div>'+
         (tc>0 ? '<span style="background:#E8432B;color:#fff;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:800">'+tc+'</span>' : '')+
+        icon('chevronRight',18)+
+      '</div>';
+    }
+    if ((state.gangRoles || []).indexOf('econome') >= 0){
+      const xc = (state.feedbackCounts && state.feedbackCounts.econome) || 0;
+      out += '<div onclick="appAction(\'openRoleSpace\',\'econome\')" class="'+(xc>0?'feedback-alert':'')+'" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:2.5px solid var(--border-strong,#000);border-radius:14px;background:#2AB0C5;color:#fff;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">'+
+        iconBadge('euro', '#fff', '#2AB0C5')+
+        '<div style="flex:1"><div class="mama-title" style="font-size:15px;color:#fff">Espace Économe</div>'+
+        '<div style="font-size:12px;opacity:.9;margin-top:2px">Réquis et suivi</div></div>'+
+        (xc>0 ? '<span style="background:#E8432B;color:#fff;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:800">'+xc+'</span>' : '')+
         icon('chevronRight',18)+
       '</div>';
     }
@@ -5697,7 +5724,7 @@ window.appRpc = async function(fn, args){
         '<div><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">Réqui</h1>'+
         '<p style="color:var(--text-secondary);margin:2px 0 0;font-size:13px">Accès économe</p></div>'+
       '</div>'+
-      '<button onclick="appAction(\'logout\')" style="display:flex;align-items:center;gap:6px;border:2px solid var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer;padding:8px 12px;border-radius:8px">'+icon('home',16)+'<span>Accueil</span></button>'+
+      '<button onclick="appAction(\''+(state.economeFromGang?'leaveRoleSpace':'logout')+'\')" style="display:flex;align-items:center;gap:6px;border:2px solid var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer;padding:8px 12px;border-radius:8px">'+icon('home',16)+'<span>Accueil</span></button>'+
       '</div>'+
       renderFeedbackButton('econome', '#2AB0C5', '#fff')+
       '</div>';
@@ -5926,12 +5953,11 @@ window.appRpc = async function(fn, args){
       '<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-radius:14px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);box-shadow:4px 4px 0 var(--border-strong,#000)">'+
       '<div style="display:flex;align-items:center;gap:10px">'+
         '<img src="'+LOGO_URI+'" alt="Mama Shelter Toulouse" style="width:36px;height:36px;object-fit:contain;flex-shrink:0">'+
-        '<div><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">Événements RH</h1>'+
-        '<p style="color:var(--text-secondary);margin:2px 0 0;font-size:13px">Accès RH</p></div>'+
+        '<div><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">Événements P&amp;C</h1>'+
+        '<p style="color:var(--text-secondary);margin:2px 0 0;font-size:13px">People &amp; Culture</p></div>'+
       '</div>'+
-      '<button onclick="appAction(\'logout\')" style="display:flex;align-items:center;gap:6px;border:2px solid var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer;padding:8px 12px;border-radius:8px">'+icon('home',16)+'<span>Accueil</span></button>'+
+      '<button onclick="appAction(\''+(state.cameFromManagerMenu?'backToManagerMenuFromEvents':'logout')+'\')" style="display:flex;align-items:center;gap:6px;border:2px solid var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer;padding:8px 12px;border-radius:8px">'+icon('home',16)+'<span>Accueil</span></button>'+
       '</div>'+
-      renderFeedbackButton('rh', '#3FAE6A', '#fff')+
       '</div>';
   }
 
@@ -5939,11 +5965,11 @@ window.appRpc = async function(fn, args){
     let out = rhHeader();
     const events = (state.rhEvents||[]).slice().sort(function(a,b){ return a.date < b.date ? -1 : 1; });
     out += '<div style="padding:8px 16px">'+
-      '<button onclick="appAction(\'goRhAdd\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#3FAE6A;color:#fff;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.2px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">'+icon('plus',16)+'<span>Ajouter un événement RH</span></button>'+
+      '<button onclick="appAction(\'goRhAdd\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#3FAE6A;color:#fff;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.2px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">'+icon('plus',16)+'<span>Ajouter un événement P&amp;C</span></button>'+
     '</div>';
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
     if (events.length === 0){
-      out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucun événement RH programmé pour l\'instant.</div>';
+      out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucun événement P&amp;C programmé pour l\'instant.</div>';
     }
     events.forEach(function(ev){
       out += '<div style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;align-items:center;gap:10px">'+
@@ -5967,7 +5993,7 @@ window.appRpc = async function(fn, args){
     out += '<div style="display:flex;flex-direction:column;gap:14px">';
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Date</label>'+
       '<input id="rh-date" type="date" value="'+(editing?esc(editing.date):'')+'" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px"></div>';
-    const standardTypes = ['Roue des anniversaires','Staff party'];
+    const standardTypes = ['Staff party','Réunion','Roue des anniversaires'];
     const isOther = editing && editing.type && !standardTypes.includes(editing.type);
     out += '<div><label style="font-size:14px;color:var(--text-secondary);font-weight:600">Type d\'événement</label>'+
       '<select id="rh-type-select" onchange="document.getElementById(\'rh-type-other-wrap\').style.display=this.value===\'Autre\'?\'block\':\'none\'" style="width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border-radius:8px;border:2px solid var(--border-strong,var(--border));background:var(--surface-1);color:var(--text-primary);font-size:15px">'+
@@ -6698,7 +6724,7 @@ window.appRpc = async function(fn, args){
         out += '<div style="text-align:center;color:var(--text-muted);font-size:14px;padding:30px 10px">Rien de prévu ce jour-là.</div>';
       } else {
         rhEvs.forEach(function(rh){
-          out += wuCard('RH', '#3FAE6A', '#fff',
+          out += wuCard('P&C', '#3FAE6A', '#fff',
             '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(rh.type)+'</div>');
         });
         events.forEach(function(ev){
@@ -6748,7 +6774,7 @@ window.appRpc = async function(fn, args){
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:12px">';
     out += '<button onclick="appAction(\'goAccessManagement\')" style="display:flex;align-items:center;gap:14px;padding:18px;border-radius:14px;border:2.5px solid var(--border-strong,#000);background:#E24B4A;color:#fff;cursor:pointer;text-align:left;box-shadow:4px 4px 0 var(--border-strong,#000)">'+
       '<div style="width:42px;height:42px;flex-shrink:0;border-radius:10px;border:2px solid var(--border-strong,#000);background:#fff;color:#E24B4A;display:flex;align-items:center;justify-content:center">'+icon('lock',22)+'</div>'+
-      '<div class="mama-title" style="font-size:15px;color:#fff">Gérer les accès (Manager, Économe, Entertainment, Events, RH)</div>'+
+      '<div class="mama-title" style="font-size:15px;color:#fff">Gérer les accès</div>'+
     '</button>';
     out += '<button onclick="appAction(\'goProcessInfosAdmin\')" style="display:flex;align-items:center;gap:14px;padding:18px;border-radius:14px;border:2.5px solid var(--border-strong,#000);background:#7A5FE0;color:#fff;cursor:pointer;text-align:left;box-shadow:4px 4px 0 var(--border-strong,#000)">'+
       '<div style="width:42px;height:42px;flex-shrink:0;border-radius:10px;border:2px solid var(--border-strong,#000);background:#fff;color:#7A5FE0;display:flex;align-items:center;justify-content:center">'+icon('edit',22)+'</div>'+
@@ -6812,10 +6838,10 @@ window.appRpc = async function(fn, args){
   }
 
   function screenAccessManagement(){
-    const roleLabels = { mamagang:'Mama Gang (sans accès spécifique)', manager:'Manager', econome:'Économe', entertainment:'Entertainment', events:'Events', rh:'RH', technique:'Technique', night:'Night', admin:'Admin' };
+    const roleLabels = { mamagang:'Mama Gang (sans accès spécifique)', manager:'Manager', econome:'Économe', entertainment:'Entertainment', technique:'Technique', night:'Night', admin:'Admin' };
     const roleColors = { mamagang:'var(--surface-0)', manager:'var(--bg-accent,#FFD500)', econome:'#2AB0C5', entertainment:'#FF8AB4', events:'#7A5FE0', rh:'#3FAE6A', technique:'#FF9F43', night:'#2F3E7E', admin:'#1A1A1A' };
     const posteLabels = { manager:'Manager', salle:'Salle', bar:'Bar', hotel:'Hôtel', cuisine:'Cuisine', 'autres-services':'Autres Services', 'non-attribue':'Non attribué' };
-    const users = (state.accessUsers || []).slice();
+    const users = (state.accessUsers || []).filter(function(u){ return u.role !== 'events' && u.role !== 'rh'; });
     (state.mamaGangUsers || []).forEach(function(u){
       users.push({ id: u.id, name: u.name, code: u.code, role: 'mamagang', poste: u.poste, roles: u.roles || [] });
     });
@@ -6861,6 +6887,10 @@ window.appRpc = async function(fn, args){
         '<span><b>Accès Technique en plus</b><br><span style="font-size:12px;color:var(--text-secondary)">Voit aussi les remontées techniques depuis son accueil</span></span></label>' : '')+
       (formRole === 'mamagang' ?
         '<label style="display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-0);font-size:14px;color:var(--text-primary);cursor:pointer">'+
+        '<input id="access-user-extra-econome" type="checkbox" '+((editingUser && (editingUser.roles||[]).indexOf('econome')>=0)?'checked ':'')+'style="width:20px;height:20px">'+
+        '<span><b>Accès Économe en plus</b><br><span style="font-size:12px;color:var(--text-secondary)">Gère les réquis depuis son accueil</span></span></label>' : '')+
+      (formRole === 'mamagang' ?
+        '<label style="display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-0);font-size:14px;color:var(--text-primary);cursor:pointer">'+
         '<input id="access-user-extra-entertainment" type="checkbox" '+((editingUser && (editingUser.roles||[]).indexOf('entertainment')>=0)?'checked ':'')+'style="width:20px;height:20px">'+
         '<span><b>Accès Entertainment en plus</b><br><span style="font-size:12px;color:var(--text-secondary)">Gère les animations depuis son accueil</span></span></label>' : '')+
       '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Code personnel (4 chiffres)</label>'+
@@ -6879,7 +6909,7 @@ window.appRpc = async function(fn, args){
       const posteSub = (u.role === 'mamagang') ? (posteLabels[u.poste || 'non-attribue']) : (roleLabels[u.role]||u.role);
       out += '<div style="padding:12px 14px;border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
         '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(u.name)+'</div>'+
-        '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+(posteSub?' · '+esc(posteSub):'')+((u.roles||[]).indexOf('technique')>=0?' · + Technique':'')+((u.roles||[]).indexOf('entertainment')>=0?' · + Entertainment':'')+'</div></div>'+
+        '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+(posteSub?' · '+esc(posteSub):'')+((u.roles||[]).indexOf('technique')>=0?' · + Technique':'')+((u.roles||[]).indexOf('entertainment')>=0?' · + Entertainment':'')+((u.roles||[]).indexOf('econome')>=0?' · + Économe':'')+'</div></div>'+
         '<span onclick="appAction(\'editAccessUser\',\''+u.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
         '<span onclick="appAction(\'deleteAccessUser\',\''+u.id+'\')" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
       '</div>';
@@ -6901,6 +6931,7 @@ window.appRpc = async function(fn, args){
       { action:'goFermeture', icon:'door', color:'#2AB0C5', fg:'#fff', label:'Fermer un floor' },
       { action:'goChecklistesMenu', icon:'clipboard', color:'#FFD500', label:'Checklistes' },
       { action:'goEventsFromManagerMenu', icon:'event', color:'#3FAE6A', fg:'#fff', label:'Réunion de fonction' },
+      { action:'goRhFromManagerMenu', icon:'heart', color:'#FF8AB4', fg:'#1A1A1A', label:'Événements P&C' },
       { action:'goViewFeedbacks', payload:'managers', icon:'event', color:'#7A5FE0', fg:'#fff', label:'Voir les remontées' }
     ];
     options.forEach(function(opt){
@@ -7021,9 +7052,7 @@ window.appRpc = async function(fn, args){
     const recipients = [
       {key:'managers', label:'Managers', color:'#FFD500', fg:'#1A1A1A'},
       {key:'econome', label:'Économe', color:'#2AB0C5', fg:'#fff'},
-      {key:'events', label:'Events', color:'#7A5FE0', fg:'#fff'},
       {key:'entertainment', label:'Entertainment', color:'#FF8AB4', fg:'#1A1A1A'},
-      {key:'rh', label:'RH', color:'#3FAE6A', fg:'#fff'},
       {key:'technique', label:'Technique', color:'#FF9F43', fg:'#fff'}
     ];
     let out = '<div style="padding:20px 16px 8px">'+
@@ -7150,8 +7179,6 @@ window.appRpc = async function(fn, args){
       { action:'chooseManager', icon:'settings', color:'var(--bg-accent,#FFD500)', fg:'var(--text-primary)', label:'Accès manager' },
       { action:'chooseEconome', icon:'archive', color:'#2AB0C5', fg:'#fff', label:'Accès Économe' },
       { action:'chooseEntertainment', icon:'event', color:'#FF8AB4', fg:'#1A1A1A', label:'Accès Entertainment' },
-      { action:'chooseEvents', icon:'event', color:'#7A5FE0', fg:'#fff', label:'Accès Events' },
-      { action:'chooseRH', icon:'event', color:'#3FAE6A', fg:'#fff', label:'Accès RH' },
       { action:'chooseAdmin', icon:'lock', color:'#1A1A1A', fg:'#fff', label:'Accès Admin' }
     ];
     let out = '<div style="padding:20px 16px 8px">'+
