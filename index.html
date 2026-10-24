@@ -1742,7 +1742,7 @@ window.agAuth = {
   async function getEventSheetPdf(id){
     try {
       const res = await window.storage.get('eventSheetPdf:'+id, true);
-      return res.value;
+      return res.value || null;
     } catch(e){
       return null;
     }
@@ -1751,7 +1751,8 @@ window.agAuth = {
     await window.storage.set('eventSheetPdf:'+id, dataUrl, true);
   }
   async function deleteEventSheetPdf(id){
-    try { await window.storage.delete('eventSheetPdf:'+id, true); } catch(e){}
+    // Pas de suppression de ligne côté base (verrouillée) : on vide simplement le contenu.
+    try { await window.storage.set('eventSheetPdf:'+id, '', true); } catch(e){}
   }
   async function getSchedules(){
     try {
@@ -1767,7 +1768,7 @@ window.agAuth = {
   async function getSchedulePdf(weekKey){
     try {
       const res = await window.storage.get('schedulePdf:'+weekKey, true);
-      return res.value;
+      return res.value || null;
     } catch(e){
       return null;
     }
@@ -1776,7 +1777,7 @@ window.agAuth = {
     await window.storage.set('schedulePdf:'+weekKey, dataUrl, true);
   }
   async function deleteSchedulePdf(weekKey){
-    try { await window.storage.delete('schedulePdf:'+weekKey, true); } catch(e){}
+    try { await window.storage.set('schedulePdf:'+weekKey, '', true); } catch(e){}
   }
   function mondayOf(date){
     const d = new Date(date);
