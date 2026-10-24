@@ -2313,7 +2313,7 @@ window.appRpc = async function(fn, args){
       }
       if (String(state.screen).indexOf('econome-') === 0){ state.requisitions = await getRequisitions(); }
       if (state.screen === 'archives'){ state.screen = 'checklistes-menu'; }
-      if (state.screen === 'morning' || state.screen === 'duty' || state.screen === 'duty-history' || state.screen === 'duty-view'){ state.screen = 'manager-menu'; }
+      if (state.screen === 'morning' || state.screen === 'duty' || state.screen === 'duty-history' || state.screen === 'duty-view' || state.screen === 'duty-hub'){ state.screen = 'manager-menu'; }
       if (state.screen === 'pertes-econome'){ state.pertes = await getPertes(); }
       if (state.screen === 'historique' && state.managerUnlocked){
         const hAll = await Promise.all([getHistorique(), getPertes(), getTemperatures(), getTracabilite(), getRequisitions()]);
@@ -3874,7 +3874,8 @@ window.appRpc = async function(fn, args){
       state.isSubmitting = false;
       render();
     }
-    else if (action === 'goDuty'){
+    else if (action === 'goDuty'){ state.screen = 'duty-hub'; state.dutyMsg = ''; render(); }
+    else if (action === 'goDutyForm'){
       state.duty = dutyLoad(); state.dutyImg = null;
       { const dd = state.duty; const parts = String(dd.date||'').split('/'); const dt = parts.length===3 ? new Date(+parts[2], +parts[1]-1, +parts[0]).getTime() : 0;
         if ((dd.sharedAt && Date.now() - dd.sharedAt > 3*3600*1000) || (dt && Date.now() - dt > 36*3600*1000)){ state.duty = dutyBlank(); dutySave(); state.dutyOpen = {}; state.dutyStaffOpen = {}; } }
@@ -3889,20 +3890,12 @@ window.appRpc = async function(fn, args){
       state.dutyMsg = (ok ? 'Duty copié ✔ Ouvre un nouveau mail et colle (appui long → Coller).' : 'Impossible de copier : utilise « Ouvrir dans ma messagerie ».') + (saved ? ' Enregistré dans l\'historique.' : ' (Historique : pas de réseau, non enregistré.)');
       renderKeep();
     }
-    else if (action === 'dutyShare'){
-      state.duty.sharedAt = Date.now(); dutySave();
-      const blobPromise = dutyImageBlob();            // lancé tout de suite (geste de l'utilisateur)
-      const copied = dutyCopyImage(blobPromise);
-      let blob = null; try { blob = await blobPromise; } catch(e){}
-      const ok = await copied;
-      state.dutyImg = blob ? await blobToDataUrl(blob) : null;
-      let saved = true; try { await dutyArchive(); } catch(e){ saved = false; }
-      const r = dutyRecipients();
-      const subject = 'Duty '+(state.duty.date||'')+' – '+(state.duty.shift||'');
-      state.dutyMsg = (ok ? 'Duty copié en image ✔ Colle-le dans le corps du mail (appui long → Coller).' : 'Copie automatique impossible : appuie longuement sur l\'image ci-dessous → Copier.') + (saved ? '' : ' (Historique non enregistré : pas de réseau.)');
-      renderKeep();
-      window.location.href = 'mailto:'+r.to+'?'+(r.cc.length ? 'cc='+r.cc.map(function(c){ return c.mail; }).join(',')+'&' : '')+'subject='+encodeURIComponent(subject);
+    else if (action === 'dutyShare'){ await dutyShareFlow(JSON.parse(JSON.stringify(state.duty)), true); }
+    else if (action === 'dutyReshare'){
+      const x = (state.dutyList||[]).find(function(y){ return y.id === payload; });
+      if (x && x.data) await dutyShareFlow(dutyNormalize(JSON.parse(JSON.stringify(x.data))), false);
     }
+    else if (action === 'goDutyHub'){ state.screen = 'duty-hub'; state.dutyMsg = ''; render(); }
     else if (action === 'dutyAdd'){
       const p = String(payload).split(':');
       if (p[0] === 'staff'){ state.duty.staff[+p[1]].push({p:'',r:'',tm:''}); }
@@ -3921,7 +3914,14 @@ window.appRpc = async function(fn, args){
       try { state.dutyList = await getDuties(); } catch(e){ state.dutyList = []; state.dutyMsg = ''; }
       render();
     }
-    else if (action === 'openDuty'){ state.dutyViewId = payload; state.dutyMsg = ''; state.screen = 'duty-view'; render(); }
+    else if (action === 'openDuty'){
+      state.dutyViewId = payload; state.dutyMsg = ''; state.dutyViewImg = null; state.screen = 'duty-view'; render();
+      const x = (state.dutyList||[]).find(function(y){ return y.id === payload; });
+      if (x && x.data){
+        try { const b = await dutyImageBlob(dutyNormalize(JSON.parse(JSON.stringify(x.data)))); state.dutyViewImg = await blobToDataUrl(b); } catch(e){}
+        if (state.screen === 'duty-view' && state.dutyViewId === payload) render();
+      }
+    }
     else if (action === 'dutyEdit'){
       const x = (state.dutyList||[]).find(function(y){ return y.id === payload; });
       if (x && x.data){ state.duty = dutyNormalize(JSON.parse(JSON.stringify(x.data))); dutySave(); state.dutyMsg = ''; state.screen = 'duty'; render(); }
@@ -7198,8 +7198,8 @@ window.appRpc = async function(fn, args){
     cuisine: [ { label:'Nicolas', mail:'nicolas.helleu@mamashelter.com' }, { label:'Erwan', mail:'Erwan.LANGRY@mamashelter.com' }, { label:'Mohammed', mail:'Mohammed.MOUSTAKIM@mamashelter.com' } ]
   };
   // Copies automatiques : seulement si l'encart correspondant est rempli.
-  function dutyRecipients(){
-    const d = state.duty, cc = [];
+  function dutyRecipients(dd){
+    const d = dd || state.duty, cc = [];
     if (dutyHasVal(d.infos.loic)) cc.push(DUTY_MAILS.loic);
     if (dutyHasVal(d.infos.celine)) cc.push(DUTY_MAILS.celine);
     if (dutyHasVal(d.cuisineRem)) DUTY_MAILS.cuisine.forEach(function(c){ cc.push(c); });
@@ -7242,8 +7242,8 @@ window.appRpc = async function(fn, args){
     return o == null ? '' : o;
   }
   function dutyNum(v){ const n = parseFloat(String(v||'').replace(',','.').replace(/\s/g,'')); return isNaN(n) ? 0 : n; }
-  function dutyTotals(){
-    const c = state.duty.chiffres;
+  function dutyTotals(dd){
+    const c = (dd || state.duty).chiffres;
     return { couverts: dutyNum(c.resto.c)+dutyNum(c.event.c)+dutyNum(c.bar.c),
              ca: Math.round((dutyNum(c.resto.ca)+dutyNum(c.event.ca)+dutyNum(c.bar.ca)+dutyNum(c.roof.ca))*100)/100 };
   }
@@ -7262,8 +7262,8 @@ window.appRpc = async function(fn, args){
     if (typeof o === 'object') return Object.keys(o).some(function(k){ return dutyHasVal(o[k]); });
     return false;
   }
-  function dutyText(){
-    const d = state.duty, L = [], x = dutyTotals();
+  function dutyText(dd){
+    const d = dd || state.duty, L = [], x = dutyTotals(d);
     const v = function(s){ return (s||'').toString().trim(); };
     L.push('Date : '+v(d.date)); L.push('SHIFT : '+v(d.shift)); L.push('');
     L.push('1. Ressenti global de la journée / soirée :'); L.push(v(d.ressenti)); L.push('');
@@ -7359,8 +7359,8 @@ window.appRpc = async function(fn, args){
     return false;
   }
   // ===== Duty en image « Mama » (collée dans le corps du mail comme un texte) =====
-  function dutyModel(){
-    const d = state.duty, x = dutyTotals();
+  function dutyModel(d0){
+    const d = d0 || state.duty, x = dutyTotals(d);
     const v = function(s){ return (s||'').toString().trim(); };
     const cx = function(k){ return d.cuisine === k ? 'X' : ''; };
     const secs = [];
@@ -7383,7 +7383,8 @@ window.appRpc = async function(fn, args){
     secs.push({n:13, t:'Heure de départ du staff', head:['Zone','Heure de départ'], w:[0.4,0.6], rows:[['Salle',v(d.departs.salle)],['Bar',v(d.departs.bar)],['Roof',v(d.departs.roof)]]});
     return secs;
   }
-  async function dutyImageBlob(){
+  async function dutyImageBlob(data){
+    const d = data || state.duty;
     const W = 720, M = 24, S = 2, COLORS = ['#E8432B','#2AB0C5','#FFD500','#FF6FA5','#7A5FE0','#3FAE6A','#FF9F43'];
     try { await Promise.all([document.fonts.load('48px Sacramento'), document.fonts.load('bold 16px Arial')]); } catch(e){}
     const logo = await new Promise(function(res){ const im = new Image(); im.onload = function(){ res(im); }; im.onerror = function(){ res(null); }; im.src = LOGO_URI; });
@@ -7406,7 +7407,6 @@ window.appRpc = async function(fn, args){
     const rr = function(ctx, x0, y0, w, h, r){ ctx.beginPath(); ctx.moveTo(x0+r,y0); ctx.arcTo(x0+w,y0,x0+w,y0+h,r); ctx.arcTo(x0+w,y0+h,x0,y0+h,r); ctx.arcTo(x0,y0+h,x0,y0,r); ctx.arcTo(x0,y0,x0+w,y0,r); ctx.closePath(); };
     // en-tête
     const HH = 112; const y0h = 24;
-    const d = state.duty;
     ops.push(function(ctx){
       ctx.fillStyle = '#000'; rr(ctx, M+5, y0h+5, W-2*M, HH, 18); ctx.fill();
       ctx.fillStyle = '#1E5FA8'; rr(ctx, M, y0h, W-2*M, HH, 18); ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.stroke();
@@ -7417,7 +7417,7 @@ window.appRpc = async function(fn, args){
       ctx.fillStyle = '#FFD500'; ctx.font = '800 20px '+HEAD; ctx.fillText(label, M+114, y0h+95);
     });
     y = y0h + HH + 26;
-    dutyModel().forEach(function(sec, si){
+    dutyModel(d).forEach(function(sec, si){
       const col = COLORS[si % COLORS.length], fg = (col === '#FFD500' || col === '#FF9F43' || col === '#2AB0C5') ? '#1A1A1A' : '#fff';
       // titre
       const ty = y;
@@ -7556,17 +7556,46 @@ window.appRpc = async function(fn, args){
     try { const res = await window.storage.get('duties', true); return JSON.parse(res.value); }
     catch(e){ if (!isNotFoundErr(e)) throw e; return []; }
   }
-  async function dutyArchive(){
-    const d = state.duty; if (!d) return;
+  // Partage : crée l'image, la copie, l'enregistre dans l'historique, ouvre le mail ; remet le formulaire à zéro si c'est le duty en cours.
+  async function dutyShareFlow(data, resetAfter){
+    const blobPromise = dutyImageBlob(data);        // lancé tout de suite (geste de l'utilisateur)
+    const copied = dutyCopyImage(blobPromise);
+    let blob = null; try { blob = await blobPromise; } catch(e){}
+    const ok = await copied;
+    const img = blob ? await blobToDataUrl(blob) : null;
+    let saved = true; try { await dutyArchive(data); } catch(e){ saved = false; }
+    const r = dutyRecipients(data);
+    const subject = 'Duty '+(data.date||'')+' – '+(data.shift||'');
+    state.dutyMsg = (ok ? 'Duty copié en image ✔ Colle-le dans le corps du mail (appui long → Coller).' : 'Copie automatique impossible : appuie longuement sur l\'image ci-dessous → Copier.') +
+      (resetAfter ? ' Le formulaire est remis à zéro.' : '') + (saved ? '' : ' (Historique non enregistré : pas de réseau.)');
+    if (resetAfter){ state.dutyImg = img; state.duty = dutyBlank(); dutySave(); state.dutyOpen = {ressenti:true}; state.dutyStaffOpen = {}; render(); }
+    else { state.dutyViewImg = img || state.dutyViewImg; renderKeep(); }
+    window.location.href = 'mailto:'+r.to+'?'+(r.cc.length ? 'cc='+r.cc.map(function(c){ return c.mail; }).join(',')+'&' : '')+'subject='+encodeURIComponent(subject);
+  }
+  async function dutyArchive(dd){
+    const d = dd || state.duty; if (!d) return;
     const list = await getDuties();
     const id = 'duty-'+String(d.date||'').replace(/\//g,'-')+'-'+(d.shift||'');
-    const entry = { id: id, date: d.date, shift: d.shift, author: state.name || '', ts: Date.now(), data: JSON.parse(JSON.stringify(d)), text: dutyText() };
+    const entry = { id: id, date: d.date, shift: d.shift, author: state.name || '', ts: Date.now(), data: JSON.parse(JSON.stringify(d)), text: dutyText(d) };
     const rest = list.filter(function(x){ return x.id !== id; });
     rest.unshift(entry);
     await window.storage.set('duties', JSON.stringify(rest.slice(0,400)), true);
   }
+  function screenDutyHub(){
+    let out = requiHubHeader('Duty', 'Fin de shift', "appAction('goManagerMenu')");
+    const card = function(action, ic, color, fg, label, sub){
+      return '<div onclick="appAction(\''+action+'\')" style="display:flex;align-items:center;gap:14px;padding:18px 16px;border:2.5px solid var(--border-strong,#000);border-radius:14px;background:'+color+';color:'+fg+';box-shadow:4px 4px 0 var(--border-strong,#000);cursor:pointer;min-height:72px">'+
+        '<div style="width:44px;height:44px;border-radius:50%;background:#fff;color:#1A1A1A;border:2.5px solid #000;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+icon(ic,24)+'</div>'+
+        '<div style="flex:1"><div class="mama-title" style="font-size:17px">'+label+'</div><div style="font-size:13px;opacity:.9;margin-top:2px">'+sub+'</div></div>'+icon('chevronRight',20)+'</div>';
+    };
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:14px">'+
+      card('goDutyForm','edit','#FF9F43','#1A1A1A','Remplir un duty','Préparer et partager le duty du shift')+
+      card('goDutyHistory','clipboard','#7A5FE0','#fff','Historique des duty','Relire, partager à nouveau ou reprendre un duty')+
+    '</div>';
+    return out+bottomNav('menu');
+  }
   function screenDutyHistory(){
-    let out = requiHubHeader('Duties envoyés', 'Les duties préparés depuis l\'app', "appAction('goDuty')");
+    let out = requiHubHeader('Historique des duty', 'Les duties déjà partagés', "appAction('goDutyHub')");
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
     if (!state.dutyList){ out += '<div style="padding:30px;text-align:center;color:var(--text-muted)">Chargement…</div>'; }
     else if (!state.dutyList.length){ out += '<div style="padding:16px;color:var(--text-muted);font-size:14px;text-align:center">Aucun duty enregistré pour l\'instant.</div>'; }
@@ -7582,16 +7611,17 @@ window.appRpc = async function(fn, args){
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
     if (!x){ out += '<div style="padding:16px;color:var(--text-muted);text-align:center">Introuvable.</div>'; }
     else {
-      out += '<div style="padding:14px;border-radius:12px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);font-size:14px;line-height:1.45;white-space:pre-wrap;color:var(--text-primary)">'+esc(x.text||'')+'</div>'+
+      out += '<button onclick="appAction(\'dutyReshare\',\''+x.id+'\')" style="width:100%;padding:16px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#FF6FA5;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 #000;cursor:pointer">Partager à nouveau</button>'+
+        '<button onclick="appAction(\'dutyEdit\',\''+x.id+'\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#FFD500;color:#1A1A1A;font-size:14px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 #000;cursor:pointer">Reprendre dans le formulaire</button>'+
         (state.dutyMsg ? '<div style="padding:10px;border-radius:10px;background:#E6F4EA;color:#1E6B34;font-size:13px;font-weight:700">'+esc(state.dutyMsg)+'</div>' : '')+
-        '<button onclick="appAction(\'dutyEdit\',\''+x.id+'\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#FFD500;color:#1A1A1A;font-size:14px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 #000;cursor:pointer">Reprendre dans le formulaire</button>';
+        (state.dutyViewImg ? '<img src="'+state.dutyViewImg+'" alt="Duty" style="width:100%;border:2px solid var(--border-strong,#000);border-radius:10px;display:block">' : '<div style="padding:24px;text-align:center;color:var(--text-muted)">Préparation de l\'image…</div>');
     }
     return out+'</div>'+bottomNav('menu');
   }
   function screenDuty(){
     if (!state.duty) state.duty = dutyLoad();
     const open = state.dutyOpen || {};
-    let out = requiHubHeader('Duty', 'Remplis, puis partage dans Outlook', "appAction('goManagerMenu')");
+    let out = requiHubHeader('Remplir un duty', 'Remplis, puis partage', "appAction('goDutyHub')");
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
     out += '<div style="padding:12px;border-radius:12px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1);display:grid;grid-template-columns:2fr 1fr;gap:8px">'+
       dutyField('Date', dutyInput('date','jj/mm/aaaa'))+dutyField('Shift', '<div style="display:flex;gap:6px">'+['AM','PM'].map(function(sh){ const on = state.duty.shift === sh; return '<button type="button" onclick="appAction(\'dutyShift\',\''+sh+'\')" style="flex:1;min-height:44px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:'+(on?'#FFD500':'var(--surface-0)')+';color:#1A1A1A;font-size:14px;font-weight:800;cursor:pointer">'+sh+'</button>'; }).join('')+'</div>')+'</div>';
@@ -8744,6 +8774,7 @@ window.appRpc = async function(fn, args){
     else if (state.screen === 'archives') html = screenArchives();
     else if (state.screen === 'morning') html = screenMorning();
     else if (state.screen === 'duty') html = screenDuty();
+    else if (state.screen === 'duty-hub') html = screenDutyHub();
     else if (state.screen === 'duty-history') html = screenDutyHistory();
     else if (state.screen === 'duty-view') html = screenDutyView();
     else if (state.screen === 'pertes-econome') html = screenPertesEconome();
