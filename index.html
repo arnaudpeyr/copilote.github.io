@@ -2314,6 +2314,7 @@ window.appRpc = async function(fn, args){
       if (String(state.screen).indexOf('econome-') === 0){ state.requisitions = await getRequisitions(); }
       if (state.screen === 'archives'){ state.screen = 'checklistes-menu'; }
       if (state.screen === 'morning'){ state.screen = 'manager-menu'; }
+      if (state.screen === 'pertes-econome'){ state.pertes = await getPertes(); }
       if (state.screen === 'historique' && state.managerUnlocked){
         const hAll = await Promise.all([getHistorique(), getPertes(), getTemperatures(), getTracabilite(), getRequisitions()]);
         state.historique = hAll[0]; state.pertes = hAll[1]; state.temperatures = hAll[2]; state.tracabilite = hAll[3]; state.requisitionsHist = hAll[4];
@@ -2590,6 +2591,12 @@ window.appRpc = async function(fn, args){
     state.screen = 'view-feedbacks';
   }
 
+  async function enterManagerSpace(){
+    state.managerLoginCodeError = false;
+    state.managerUnlocked = true;
+    state.feedbackCounts = await getFeedbackCountsCache();
+    state.screen = 'manager-menu';
+  }
   async function enterEconomeSpace(){
     state.economeLoginCodeError = false;
     state.economeUnlocked = true;
@@ -2607,6 +2614,7 @@ window.appRpc = async function(fn, args){
     const t = document.getElementById('access-user-extra-technique'); if (t && t.checked) r.push('technique');
     const e = document.getElementById('access-user-extra-entertainment'); if (e && e.checked) r.push('entertainment');
     const ec = document.getElementById('access-user-extra-econome'); if (ec && ec.checked) r.push('econome');
+    const mg = document.getElementById('access-user-extra-manager'); if (mg && mg.checked) r.push('manager');
     return r;
   }
   async function enterEntertainmentSpace(){
@@ -3329,6 +3337,17 @@ window.appRpc = async function(fn, args){
       state.historiqueTracaId = null;
       render();
     }
+    else if (action === 'goPertesEconome'){
+      if (!state.economeUnlocked) return;
+      state.pertes = await getPertes();
+      if (!state.historiqueMonth) state.historiqueMonth = monthKeyOf(new Date());
+      state.screen = 'pertes-econome';
+      render();
+    }
+    else if (action === 'backPertesEconome'){
+      state.requiHubFrom = 'econome'; state.requiHubStep = 'menu'; state.screen = 'requi-hub';
+      render();
+    }
     else if (action === 'setHistoriqueMonth'){
       const sel = document.getElementById('historique-month-select');
       state.historiqueMonth = sel.value; render();
@@ -3869,6 +3888,11 @@ window.appRpc = async function(fn, args){
         state.techniqueFromGang = true;
         await enterTechniqueSpace();
         render();
+      }
+      else if (payload === 'manager' && (state.gangRoles || []).indexOf('manager') >= 0){
+        await enterManagerSpace();
+        render();
+        autoArchive(false);
       }
       else if (payload === 'econome' && (state.gangRoles || []).indexOf('econome') >= 0){
         state.economeFromGang = true;
@@ -4435,6 +4459,17 @@ window.appRpc = async function(fn, args){
       if (payload.catId === 'fermeture'){
         // Fermer un floor : on demande d'abord le prénom du manager qui replie (sinon le rapport n'affiche que « Manager »).
         state.fermetureNameError = false;
+        if ((state.gangRoles || []).indexOf('manager') >= 0 && state.name && state.name !== 'Manager'){
+          // Profil personnel : le prénom est déjà connu, on passe directement à la checklist.
+          state.weeklyIncompleteError = false;
+          const progF = await getProgress(payload.subId);
+          progF.operator = state.name;
+          await setProgress(payload.subId, progF);
+          state.progress[payload.subId] = progF;
+          state.screen = 'checklist';
+          render();
+          return;
+        }
         state.screen = 'fermeture-name';
         render();
         return;
@@ -5265,6 +5300,16 @@ window.appRpc = async function(fn, args){
         '<div style="flex:1"><div class="mama-title" style="font-size:15px;color:#fff">Espace Technique</div>'+
         '<div style="font-size:12px;opacity:.9;margin-top:2px">Remontées techniques</div></div>'+
         (tc>0 ? '<span style="background:#E8432B;color:#fff;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:800">'+tc+'</span>' : '')+
+        icon('chevronRight',18)+
+      '</div>';
+    }
+    if ((state.gangRoles || []).indexOf('manager') >= 0){
+      const mc = (state.feedbackCounts && state.feedbackCounts.managers) || 0;
+      out += '<div onclick="appAction(\'openRoleSpace\',\'manager\')" class="'+(mc>0?'feedback-alert':'')+'" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:2.5px solid var(--border-strong,#000);border-radius:14px;background:var(--bg-accent,#FFD500);color:#1A1A1A;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">'+
+        iconBadge('settings', '#fff', '#1A1A1A')+
+        '<div style="flex:1"><div class="mama-title" style="font-size:15px;color:#1A1A1A">Espace Manager</div>'+
+        '<div style="font-size:12px;opacity:.85;margin-top:2px">Menu manager</div></div>'+
+        (mc>0 ? '<span style="background:#E8432B;color:#fff;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:800">'+mc+'</span>' : '')+
         icon('chevronRight',18)+
       '</div>';
     }
@@ -6203,6 +6248,7 @@ window.appRpc = async function(fn, args){
         requiBigCard("appAction('openRequiFollow','cave')", 'archive', 'Préparer une réqui', 'Cave : cocher ce qui est monté')+
         requiBigCard("appAction('openRequiFollow','etage')", 'check', 'Réassortir le BEV', 'Bar : cocher ce qui est rangé')+
         (fromEcon ? requiBigCard("appAction('openEconomeDays','econome')", 'event', 'Suivre une réqui', 'Statut, historique, CSV, PDF') : '')+
+        (fromEcon ? requiBigCard("appAction('goPertesEconome')", 'archive', 'Rapport des pertes', 'Par mois, export CSV') : '')+
       '</div>';
     }
     if (!fromEcon) out += bottomNav('home');
@@ -6887,6 +6933,10 @@ window.appRpc = async function(fn, args){
         '<span><b>Accès Technique en plus</b><br><span style="font-size:12px;color:var(--text-secondary)">Voit aussi les remontées techniques depuis son accueil</span></span></label>' : '')+
       (formRole === 'mamagang' ?
         '<label style="display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-0);font-size:14px;color:var(--text-primary);cursor:pointer">'+
+        '<input id="access-user-extra-manager" type="checkbox" '+((editingUser && (editingUser.roles||[]).indexOf('manager')>=0)?'checked ':'')+'style="width:20px;height:20px">'+
+        '<span><b>Accès Manager en plus</b><br><span style="font-size:12px;color:var(--text-secondary)">Ouvre le menu manager depuis son accueil</span></span></label>' : '')+
+      (formRole === 'mamagang' ?
+        '<label style="display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-0);font-size:14px;color:var(--text-primary);cursor:pointer">'+
         '<input id="access-user-extra-econome" type="checkbox" '+((editingUser && (editingUser.roles||[]).indexOf('econome')>=0)?'checked ':'')+'style="width:20px;height:20px">'+
         '<span><b>Accès Économe en plus</b><br><span style="font-size:12px;color:var(--text-secondary)">Gère les réquis depuis son accueil</span></span></label>' : '')+
       (formRole === 'mamagang' ?
@@ -6909,7 +6959,7 @@ window.appRpc = async function(fn, args){
       const posteSub = (u.role === 'mamagang') ? (posteLabels[u.poste || 'non-attribue']) : (roleLabels[u.role]||u.role);
       out += '<div style="padding:12px 14px;border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
         '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(u.name)+'</div>'+
-        '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+(posteSub?' · '+esc(posteSub):'')+((u.roles||[]).indexOf('technique')>=0?' · + Technique':'')+((u.roles||[]).indexOf('entertainment')>=0?' · + Entertainment':'')+((u.roles||[]).indexOf('econome')>=0?' · + Économe':'')+'</div></div>'+
+        '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+(posteSub?' · '+esc(posteSub):'')+((u.roles||[]).indexOf('technique')>=0?' · + Technique':'')+((u.roles||[]).indexOf('entertainment')>=0?' · + Entertainment':'')+((u.roles||[]).indexOf('econome')>=0?' · + Économe':'')+((u.roles||[]).indexOf('manager')>=0?' · + Manager':'')+'</div></div>'+
         '<span onclick="appAction(\'editAccessUser\',\''+u.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
         '<span onclick="appAction(\'deleteAccessUser\',\''+u.id+'\')" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
       '</div>';
@@ -7428,16 +7478,12 @@ window.appRpc = async function(fn, args){
         '</div>'+
       '</div>';
     });
-    const pertesCount = (state.pertes||[]).length;
-    out += '<div onclick="appAction(\'openHistoriqueZone\',\'Pertes\')" style="padding:16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer;display:flex;align-items:center;justify-content:space-between">'+
-      '<div class="mama-title" style="font-size:15px;color:var(--text-primary)">Pertes</div>'+
-      '<div style="display:flex;align-items:center;gap:10px">'+
-        '<span style="font-size:13px;color:var(--text-secondary)">'+pertesCount+' déclaration'+(pertesCount>1?'s':'')+'</span>'+
-        icon('chevronRight',18)+
-      '</div>'+
-    '</div>';
     out += '</div>';
     return out;
+  }
+
+  function screenPertesEconome(){
+    return economeHeader() + renderPertesHistorique();
   }
 
   function renderPertesHistorique(){
@@ -7447,7 +7493,7 @@ window.appRpc = async function(fn, args){
     const rows = (state.pertes||[]).filter(function(p){ return p.monthKey === state.historiqueMonth; });
 
     let out = '<div style="padding:8px 16px">';
-    out += '<div onclick="appAction(\'backHistoriqueZones\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;margin-bottom:12px;font-size:14px">'+icon('back',18)+'<span>Retour aux zones</span></div>';
+    out += '<div onclick="appAction(\''+(state.screen==='pertes-econome'?'backPertesEconome':'backHistoriqueZones')+'\')" style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);cursor:pointer;margin-bottom:12px;font-size:14px">'+icon('back',18)+'<span>Retour aux zones</span></div>';
     out += '</div>';
 
     out += '<div style="padding:8px 16px" class="no-print">';
@@ -8084,6 +8130,7 @@ window.appRpc = async function(fn, args){
     else if (state.screen === 'fermeture-name') html = screenFermetureName();
     else if (state.screen === 'archives') html = screenArchives();
     else if (state.screen === 'morning') html = screenMorning();
+    else if (state.screen === 'pertes-econome') html = screenPertesEconome();
     else if (state.screen === 'manager-locked') html = screenManagerLocked();
     else if (state.screen === 'other-access-menu') html = screenOtherAccessMenu();
     else if (state.screen === 'access-management') html = screenAccessManagement();
