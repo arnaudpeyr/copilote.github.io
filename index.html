@@ -1136,6 +1136,7 @@ window.appRpc = async function(fn, args){
     techniqueUnlocked: false,
     gangRoles: [],
     techniqueFromGang: false,
+    entertainmentFromGang: false,
     techniqueLoginCodeError: false,
     nightUnlocked: false,
     nightLoginCodeError: false,
@@ -2261,7 +2262,7 @@ window.appRpc = async function(fn, args){
   }
 
   const SESSION_SNAPSHOT_KEY = 'copilote_session_snapshot';
-  const SESSION_SNAPSHOT_FIELDS = ['name','gangRoles','techniqueFromGang','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','agm','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','prestationDraftZoneOther','prestationDraftType','prestationDraftTypeOther','entertainmentEditingId','entFormDate','entFormType','entFormInfo','entFormPlace','cameFromManagerMenu','suiviFrom','requiHubFrom','requiHubStep','requiViaHub','followMode','categoryId','sublieuId'];
+  const SESSION_SNAPSHOT_FIELDS = ['name','gangRoles','techniqueFromGang','entertainmentFromGang','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','agm','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','prestationDraftZoneOther','prestationDraftType','prestationDraftTypeOther','entertainmentEditingId','entFormDate','entFormType','entFormInfo','entFormPlace','cameFromManagerMenu','suiviFrom','requiHubFrom','requiHubStep','requiViaHub','followMode','categoryId','sublieuId'];
   function compressImageDataUrl(dataUrl, maxWidth, quality){
     return new Promise(function(resolve){
       try {
@@ -2588,6 +2589,22 @@ window.appRpc = async function(fn, args){
     state.screen = 'view-feedbacks';
   }
 
+  function extraRolesFromForm(){
+    const r = [];
+    const t = document.getElementById('access-user-extra-technique'); if (t && t.checked) r.push('technique');
+    const e = document.getElementById('access-user-extra-entertainment'); if (e && e.checked) r.push('entertainment');
+    return r;
+  }
+  async function enterEntertainmentSpace(){
+    state.entertainmentLoginCodeError = false;
+    state.entertainmentUnlocked = true;
+    const [events, feedbackCounts] = await Promise.all([getEvents(), getFeedbackCountsCache()]);
+    state.events = events;
+    state.feedbackCounts = feedbackCounts;
+    state.entertainmentEditingId = null;
+    state.screen = 'entertainment-list';
+  }
+
   async function appActionInner(action, payload){
     if (action === 'dismissGlobalError'){
       state.globalError = null; render(); return;
@@ -2787,14 +2804,9 @@ window.appRpc = async function(fn, args){
       const code = (input.value||'').trim();
       const matchEnt = await serverLogin('entertainment', code);
       if (matchEnt.ok){
-        state.entertainmentLoginCodeError = false;
-        state.entertainmentUnlocked = true;
         if (matchEnt.name) state.name = matchEnt.name;
-        const [events, feedbackCounts] = await Promise.all([getEvents(), getFeedbackCountsCache()]);
-        state.events = events;
-        state.feedbackCounts = feedbackCounts;
-        state.entertainmentEditingId = null;
-        state.screen = 'entertainment-list';
+        state.entertainmentFromGang = false;
+        await enterEntertainmentSpace();
       } else {
         state.entertainmentLoginCodeError = true;
       }
@@ -3139,7 +3151,7 @@ window.appRpc = async function(fn, args){
       }
     }
     else if (action === 'logout'){
-      state.gangRoles = []; state.techniqueFromGang = false;
+      state.gangRoles = []; state.techniqueFromGang = false; state.entertainmentFromGang = false;
       state.name=''; state.managerUnlocked=false; state.economeUnlocked=false; state.entertainmentUnlocked=false; state.eventsUnlocked=false; state.rhUnlocked=false; state.adminUnlocked=false; state.techniqueUnlocked=false; state.nightUnlocked=false; state.cameFromManagerMenu=false; state.loginStep='simple'; state.screen='login';
       try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(SESSION_SNAPSHOT_KEY); } catch(e){}
       render();
@@ -3465,7 +3477,7 @@ window.appRpc = async function(fn, args){
         const posteEl = document.getElementById('access-user-poste');
         const target = gangList.find(function(u){ return u.id === state.accessEditingId; });
         const xTechE = document.getElementById('access-user-extra-technique');
-        if (target){ target.name = name; target.code = code; target.poste = posteEl ? posteEl.value : (target.poste||'non-attribue'); target.roles = (xTechE && xTechE.checked) ? ['technique'] : []; }
+        if (target){ target.name = name; target.code = code; target.poste = posteEl ? posteEl.value : (target.poste||'non-attribue'); target.roles = extraRolesFromForm(); }
         await saveMamaGangUsers(gangList);
         state.mamaGangUsers = gangList;
       } else {
@@ -3502,7 +3514,7 @@ window.appRpc = async function(fn, args){
         }
         const posteEl = document.getElementById('access-user-poste');
         const xTech = document.getElementById('access-user-extra-technique');
-        gangList.push({ id:'gang-'+Date.now(), name: name, code: code, poste: posteEl ? posteEl.value : 'non-attribue', roles: (xTech && xTech.checked) ? ['technique'] : [] });
+        gangList.push({ id:'gang-'+Date.now(), name: name, code: code, poste: posteEl ? posteEl.value : 'non-attribue', roles: extraRolesFromForm() });
         await saveMamaGangUsers(gangList);
         state.mamaGangUsers = gangList;
         state.accessUserError = false;
@@ -3845,6 +3857,16 @@ window.appRpc = async function(fn, args){
         await enterTechniqueSpace();
         render();
       }
+      else if (payload === 'entertainment' && (state.gangRoles || []).indexOf('entertainment') >= 0){
+        state.entertainmentFromGang = true;
+        await enterEntertainmentSpace();
+        render();
+      }
+    }
+    else if (action === 'leaveRoleSpace'){
+      state.entertainmentUnlocked = false; state.entertainmentFromGang = false;
+      state.techniqueUnlocked = false; state.techniqueFromGang = false;
+      await appActionInner('goHome');
     }
     else if (action === 'backFromFeedbacks'){
       if (state.viewFeedbacksCategory === 'managers') state.screen = 'manager-menu';
@@ -5229,6 +5251,16 @@ window.appRpc = async function(fn, args){
         icon('chevronRight',18)+
       '</div>';
     }
+    if ((state.gangRoles || []).indexOf('entertainment') >= 0){
+      const ec = (state.feedbackCounts && state.feedbackCounts.entertainment) || 0;
+      out += '<div onclick="appAction(\'openRoleSpace\',\'entertainment\')" class="'+(ec>0?'feedback-alert':'')+'" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:2.5px solid var(--border-strong,#000);border-radius:14px;background:#FF8AB4;color:#1A1A1A;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">'+
+        iconBadge('mask', '#fff', '#FF5C9A')+
+        '<div style="flex:1"><div class="mama-title" style="font-size:15px;color:#1A1A1A">Espace Entertainment</div>'+
+        '<div style="font-size:12px;opacity:.85;margin-top:2px">Animations et remontées</div></div>'+
+        (ec>0 ? '<span style="background:#E8432B;color:#fff;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:800">'+ec+'</span>' : '')+
+        icon('chevronRight',18)+
+      '</div>';
+    }
     out += '<div style="border:2.5px solid var(--border-strong,#000);border-radius:14px;background:var(--surface-1);overflow:hidden;box-shadow:3px 3px 0 var(--border-strong,#000)">'+
       '<div onclick="appAction(\'toggleInfosUtiles\')" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer">'+
         iconBadge('clipboard', '#2AB0C5', '#fff')+
@@ -5679,7 +5711,7 @@ window.appRpc = async function(fn, args){
         '<div><h1 class="mama-title" style="font-size:18px;color:var(--text-primary);margin:0">Animations</h1>'+
         '<p style="color:var(--text-secondary);margin:2px 0 0;font-size:13px">Accès entertainment</p></div>'+
       '</div>'+
-      '<button onclick="appAction(\'logout\')" style="display:flex;align-items:center;gap:6px;border:2px solid var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer;padding:8px 12px;border-radius:8px">'+icon('home',16)+'<span>Accueil</span></button>'+
+      '<button onclick="appAction(\''+(state.entertainmentFromGang?'leaveRoleSpace':'logout')+'\')" style="display:flex;align-items:center;gap:6px;border:2px solid var(--border-strong,#000);background:var(--surface-0);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer;padding:8px 12px;border-radius:8px">'+icon('home',16)+'<span>Accueil</span></button>'+
       '</div>'+
       renderFeedbackButton('entertainment', '#FF8AB4', '#1A1A1A')+
       '</div>';
@@ -6827,6 +6859,10 @@ window.appRpc = async function(fn, args){
         '<label style="display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-0);font-size:14px;color:var(--text-primary);cursor:pointer">'+
         '<input id="access-user-extra-technique" type="checkbox" '+((editingUser && (editingUser.roles||[]).indexOf('technique')>=0)?'checked ':'')+'style="width:20px;height:20px">'+
         '<span><b>Accès Technique en plus</b><br><span style="font-size:12px;color:var(--text-secondary)">Voit aussi les remontées techniques depuis son accueil</span></span></label>' : '')+
+      (formRole === 'mamagang' ?
+        '<label style="display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-0);font-size:14px;color:var(--text-primary);cursor:pointer">'+
+        '<input id="access-user-extra-entertainment" type="checkbox" '+((editingUser && (editingUser.roles||[]).indexOf('entertainment')>=0)?'checked ':'')+'style="width:20px;height:20px">'+
+        '<span><b>Accès Entertainment en plus</b><br><span style="font-size:12px;color:var(--text-secondary)">Gère les animations depuis son accueil</span></span></label>' : '')+
       '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Code personnel (4 chiffres)</label>'+
       '<input id="access-user-code" type="text" inputmode="numeric" maxlength="4" placeholder="Ex: 1234" value="'+(editingUser?esc(editingUser.code):'')+'" style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px;text-align:center;letter-spacing:3px">'+
       (state.accessUserError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0 0 10px">'+esc(state.accessUserError)+'</p>' : '')+
@@ -6843,7 +6879,7 @@ window.appRpc = async function(fn, args){
       const posteSub = (u.role === 'mamagang') ? (posteLabels[u.poste || 'non-attribue']) : (roleLabels[u.role]||u.role);
       out += '<div style="padding:12px 14px;border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
         '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(u.name)+'</div>'+
-        '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+(posteSub?' · '+esc(posteSub):'')+((u.roles||[]).indexOf('technique')>=0?' · + Technique':'')+'</div></div>'+
+        '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+(posteSub?' · '+esc(posteSub):'')+((u.roles||[]).indexOf('technique')>=0?' · + Technique':'')+((u.roles||[]).indexOf('entertainment')>=0?' · + Entertainment':'')+'</div></div>'+
         '<span onclick="appAction(\'editAccessUser\',\''+u.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
         '<span onclick="appAction(\'deleteAccessUser\',\''+u.id+'\')" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
       '</div>';
