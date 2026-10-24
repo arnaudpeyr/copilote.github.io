@@ -1371,7 +1371,7 @@ window.appRpc = async function(fn, args){
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
       const nettoyageQuotidien = bar.sublieux.find(s=>s.id==='nettoyage-quotidien');
-      if (nettoyageQuotidien && !nettoyageQuotidien.tasks.some(t=>t.id==='nq-1')){
+      if (nettoyageQuotidien && (!nettoyageQuotidien.tasks || nettoyageQuotidien.tasks.length === 0)){
         nettoyageQuotidien.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='bar').sublieux.find(s=>s.id==='nettoyage-quotidien').tasks));
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
@@ -1380,7 +1380,7 @@ window.appRpc = async function(fn, args){
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
       const nettoyageHebdoBar = bar.sublieux.find(s=>s.id==='nettoyage-hebdo');
-      if (nettoyageHebdoBar && !nettoyageHebdoBar.tasks.some(t=>t.id==='nhb-1')){
+      if (nettoyageHebdoBar && (!nettoyageHebdoBar.tasks || nettoyageHebdoBar.tasks.length === 0)){
         nettoyageHebdoBar.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='bar').sublieux.find(s=>s.id==='nettoyage-hebdo').tasks));
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
@@ -1421,17 +1421,17 @@ window.appRpc = async function(fn, args){
     const ateliers = structure.categories.find(c=>c.id==='ateliers');
     if (ateliers){
       const atelier1 = ateliers.sublieux.find(s=>s.id==='atelier1');
-      if (atelier1 && !atelier1.tasks.some(t=>t.id==='a1-1')){
+      if (atelier1 && (!atelier1.tasks || atelier1.tasks.length === 0)){
         atelier1.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='ateliers').sublieux.find(s=>s.id==='atelier1').tasks));
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
       const atelier2 = ateliers.sublieux.find(s=>s.id==='atelier2');
-      if (atelier2 && !atelier2.tasks.some(t=>t.id==='a2-1')){
+      if (atelier2 && (!atelier2.tasks || atelier2.tasks.length === 0)){
         atelier2.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='ateliers').sublieux.find(s=>s.id==='atelier2').tasks));
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
       const atelier3 = ateliers.sublieux.find(s=>s.id==='atelier3');
-      if (atelier3 && !atelier3.tasks.some(t=>t.id==='a3-1')){
+      if (atelier3 && (!atelier3.tasks || atelier3.tasks.length === 0)){
         atelier3.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='ateliers').sublieux.find(s=>s.id==='atelier3').tasks));
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
@@ -1440,12 +1440,12 @@ window.appRpc = async function(fn, args){
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
       const room122 = ateliers.sublieux.find(s=>s.id==='room122');
-      if (room122 && !room122.tasks.some(t=>t.id==='r122-1')){
+      if (room122 && (!room122.tasks || room122.tasks.length === 0)){
         room122.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='ateliers').sublieux.find(s=>s.id==='room122').tasks));
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
       const room222 = ateliers.sublieux.find(s=>s.id==='room222');
-      if (room222 && !room222.tasks.some(t=>t.id==='r222-1')){
+      if (room222 && (!room222.tasks || room222.tasks.length === 0)){
         room222.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='ateliers').sublieux.find(s=>s.id==='room222').tasks));
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
@@ -1530,12 +1530,12 @@ window.appRpc = async function(fn, args){
         requisitionArrieres.name = 'Réqui Salle';
         changed = true;
       }
-      if (hebdo && !hebdo.tasks.some(t=>t.id==='gn-18')){
+      if (hebdo && (!hebdo.tasks || hebdo.tasks.length === 0)){
         hebdo.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='arrieres').sublieux.find(s=>s.id==='grand-nettoyage-dimanche').tasks));
         changed = true;
       }
       const quotidienArrieres = arrieres.sublieux.find(s=>s.id==='nettoyage-quotidien-arrieres');
-      if (quotidienArrieres && !quotidienArrieres.tasks.some(t=>t.id==='nqa-1')){
+      if (quotidienArrieres && (!quotidienArrieres.tasks || quotidienArrieres.tasks.length === 0)){
         quotidienArrieres.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='arrieres').sublieux.find(s=>s.id==='nettoyage-quotidien-arrieres').tasks));
         changed = true;
       }
@@ -1574,12 +1574,12 @@ window.appRpc = async function(fn, args){
     const fermetureCat = structure.categories.find(c=>c.id==='fermeture');
     if (fermetureCat){
       const rdc = fermetureCat.sublieux.find(s=>s.id==='fermeture-rdc');
-      if (rdc && !rdc.tasks.some(t=>t.id==='frdc-1')){
+      if (rdc && (!rdc.tasks || rdc.tasks.length === 0)){
         rdc.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='fermeture').sublieux.find(s=>s.id==='fermeture-rdc').tasks));
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
       const roof = fermetureCat.sublieux.find(s=>s.id==='fermeture-roof');
-      if (roof && !roof.tasks.some(t=>t.id==='froof-22' && t.group)){
+      if (roof && (!roof.tasks || roof.tasks.length === 0)){
         roof.tasks = JSON.parse(JSON.stringify(DEFAULT_STRUCTURE.categories.find(c=>c.id==='fermeture').sublieux.find(s=>s.id==='fermeture-roof').tasks));
         await window.storage.set('structure', JSON.stringify(structure), true);
       }
