@@ -3890,15 +3890,16 @@ window.appRpc = async function(fn, args){
       renderKeep();
     }
     else if (action === 'dutyShare'){
-      const ok = await dutyCopy();
+      const res = await dutyCopy();
       state.duty.sharedAt = Date.now(); dutySave();
       let saved = true; try { await dutyArchive(); } catch(e){ saved = false; }
-      const cc = state.duty.ccCuisine ? (DUTY_CC.match(/[\w.+-]+@[\w.-]+/g) || []).join(',') : '';
+      const r = dutyRecipients();
       const subject = 'Duty '+(state.duty.date||'')+' – '+(state.duty.shift||'');
-      state.dutyMsg = (ok ? 'Duty copié ✔ Colle-le dans le mail (appui long → Coller).' : 'Copie impossible, réessaie.') + (saved ? '' : ' (Historique non enregistré : pas de réseau.)');
+      state.dutyMsg = (res === 'rich' ? 'Duty copié ✔ avec les tableaux. Colle-le dans le mail (appui long → Coller).' :
+                       (res === 'text' ? 'Duty copié en texte simple (sans tableaux) : ce téléphone n\'accepte pas la copie avec mise en forme.' : 'Copie impossible, réessaie.')) + (saved ? '' : ' (Historique non enregistré : pas de réseau.)');
       renderKeep();
-      // mailto : ouvre la messagerie par défaut du téléphone / de l'ordinateur (Outlook si c'est celle choisie), sans page web ni redirection.
-      window.location.href = 'mailto:?'+(cc ? 'cc='+cc+'&' : '')+'subject='+encodeURIComponent(subject);
+      // mailto : ouvre la messagerie par défaut (Outlook si c'est celle choisie), sans page web ni redirection.
+      window.location.href = 'mailto:'+r.to+'?'+(r.cc.length ? 'cc='+r.cc.map(function(c){ return c.mail; }).join(',')+'&' : '')+'subject='+encodeURIComponent(subject);
     }
     else if (action === 'dutyAdd'){
       const p = String(payload).split(':');
@@ -7188,7 +7189,24 @@ window.appRpc = async function(fn, args){
     {k:'departs', t:'Heure de départ du staff'}
   ];
   function dutyToday(){ const d = new Date(); return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear(); }
-  const DUTY_CC = 'Nicolas HELLEU <nicolas.helleu@mamashelter.com>; Erwan LANGRY <Erwan.LANGRY@mamashelter.com>; Mohammed MOUSTAKIM <Mohammed.MOUSTAKIM@mamashelter.com>';
+  const DUTY_TO = 'managersresto.toulouse@mamashelter.com';
+  const DUTY_MAILS = {
+    loic: { label:'Loïc (technique)', mail:'Loic.VERDALET@mamashelter.com' },
+    celine: { label:'Céline (compta)', mail:'celine.marmet@mamashelter.com' },
+    cuisine: [ { label:'Nicolas', mail:'nicolas.helleu@mamashelter.com' }, { label:'Erwan', mail:'Erwan.LANGRY@mamashelter.com' }, { label:'Mohammed', mail:'Mohammed.MOUSTAKIM@mamashelter.com' } ]
+  };
+  // Copies automatiques : seulement si l'encart correspondant est rempli.
+  function dutyRecipients(){
+    const d = state.duty, cc = [];
+    if (dutyHasVal(d.infos.loic)) cc.push(DUTY_MAILS.loic);
+    if (dutyHasVal(d.infos.celine)) cc.push(DUTY_MAILS.celine);
+    if (dutyHasVal(d.cuisineRem)) DUTY_MAILS.cuisine.forEach(function(c){ cc.push(c); });
+    return { to: DUTY_TO, cc: cc };
+  }
+  function dutyRecipHtml(){
+    const r = dutyRecipients();
+    return '<b>À :</b> '+esc(r.to)+'<br><b>Copie :</b> '+(r.cc.length ? esc(r.cc.map(function(c){ return c.label; }).join(', ')) : 'personne')+'';
+  }
   function dutyBlank(){
     const arr = function(n, o){ const a = []; for (let i=0;i<n;i++) a.push(JSON.parse(JSON.stringify(o))); return a; };
     return { date: dutyToday(), shift: (new Date().getHours() < 17 ? 'AM' : 'PM'),
@@ -7198,12 +7216,13 @@ window.appRpc = async function(fn, args){
       staff: DUTY_ZONES.map(function(){ return [{p:'',r:'',tm:''}]; }),
       groupes:[{nom:'',guests:'',rem:''}], infos:{celine:'',loic:''},
       plaintes:[{nom:'',detail:'',solution:''}], ruptures:{bar:'',cuisine:''},
-      cuisine:'', cuisineRem:'', ccCuisine:true, passation:{ateliers:'',autres:''}, departs:{salle:'',bar:'',roof:''} };
+      cuisine:'', cuisineRem:'', passation:{texte:''}, departs:{salle:'',bar:'',roof:''} };
   }
   function dutyNormalize(d){
     const b = dutyBlank();
     Object.keys(b).forEach(function(k){ if (d[k] === undefined) d[k] = b[k]; });
     if (!Array.isArray(d.anim)) d.anim = [d.anim];
+    if (d.passation && d.passation.texte === undefined) d.passation = { texte: [d.passation.ateliers, d.passation.autres].filter(function(t){ return t && String(t).trim(); }).join('\n') };
     if (!Array.isArray(d.groupes) || !d.groupes.length) d.groupes = b.groupes;
     if (!Array.isArray(d.plaintes) || !d.plaintes.length) d.plaintes = b.plaintes;
     if (!Array.isArray(d.staff)) d.staff = b.staff;
@@ -7232,6 +7251,7 @@ window.appRpc = async function(fn, args){
     for (let i=0;i<p.length-1;i++) o = o[p[i]];
     o[p[p.length-1]] = val; dutySave();
     const t = document.getElementById('duty-total');
+    const rc = document.getElementById('duty-recip'); if (rc) rc.innerHTML = dutyRecipHtml();
     if (t && path.indexOf('chiffres') === 0){ const x = dutyTotals(); t.textContent = x.couverts+' couverts · '+x.ca+' K€ HT'; }
   };
   function dutyHasVal(o){
@@ -7271,7 +7291,7 @@ window.appRpc = async function(fn, args){
     L.push('11. Point sur la cuisine : '+(d.cuisine==='pas'?'PAS D\'ATTENTE':(d.cuisine==='moyenne'?'ATTENTE MOYENNE':(d.cuisine==='trop'?'TROP D\'ATTENTE':''))));
     if (v(d.cuisineRem)) L.push('Remarques : '+v(d.cuisineRem));
     L.push('');
-    L.push('12. Passation d\'informations managers :'); L.push('Ateliers : '+v(d.passation.ateliers)); L.push('Autres infos : '+v(d.passation.autres)); L.push('');
+    L.push('12. Passation d\'informations managers :'); L.push(v(d.passation.texte)); L.push('');
     L.push('13. Heure de départ du staff :'); L.push('Salle : '+v(d.departs.salle)); L.push('Bar : '+v(d.departs.bar)); L.push('Roof : '+v(d.departs.roof));
     return L.join('\n');
   }
@@ -7304,20 +7324,37 @@ window.appRpc = async function(fn, args){
     const cx = function(k){ return d.cuisine===k ? 'X' : ''; };
     o += h(11,'Point sur la cuisine')+grid(['PAS D\'ATTENTE','ATTENTE MOYENNE','TROP D\'ATTENTE'],[[cx('pas'),cx('moyenne'),cx('trop')]]);
     if (String(d.cuisineRem||'').trim()) o += '<p style="margin:8px 0 0;'+FONT+'"><b>Remarques :</b> '+e(d.cuisineRem)+'</p>';
-    o += h(12,'Passation d\'informations managers')+kv([['Ateliers ?',e(d.passation.ateliers)],['Autres infos ?',e(d.passation.autres)]]);
+    o += h(12,'Passation d\'informations managers')+one(d.passation.texte);
     o += h(13,'Heure de départ du staff')+grid(['ZONE','HEURE DE DÉPART'],[['Salle',e(d.departs.salle)],['Bar',e(d.departs.bar)],['Roof',e(d.departs.roof)]]);
     return o+'</div>';
   }
+  // Copie « riche » (tableaux + polices) : sélection d'un bloc HTML puis copie, méthode compatible iPhone, Android et ordinateur.
+  function dutyCopyRich(html){
+    let ok = false;
+    try {
+      const box = document.createElement('div');
+      box.contentEditable = 'true';
+      box.style.cssText = 'position:fixed;left:0;top:0;width:700px;opacity:0.01;pointer-events:none;background:#fff;z-index:-1';
+      box.innerHTML = html;
+      document.body.appendChild(box);
+      const range = document.createRange(); range.selectNodeContents(box);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      ok = document.execCommand('copy');
+      sel.removeAllRanges(); box.remove();
+    } catch(e){ ok = false; }
+    return ok;
+  }
   async function dutyCopy(){
     const html = dutyHtml(), text = dutyText();
+    if (dutyCopyRich(html)) return 'rich';
     try {
       if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write){
         await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], {type:'text/html'}), 'text/plain': new Blob([text], {type:'text/plain'}) })]);
-      } else { await navigator.clipboard.writeText(text); }
-      return true;
-    } catch(e){
-      try { await navigator.clipboard.writeText(text); return true; } catch(e2){ return false; }
-    }
+        return 'rich';
+      }
+    } catch(e){}
+    try { await navigator.clipboard.writeText(text); return 'text'; } catch(e){}
+    return false;
   }
   function dutyInput(path, ph, extra){
     return '<input type="text" value="'+esc(dutyGet(path))+'" placeholder="'+esc(ph||'')+'" oninput="dutySet(\''+path+'\',this.value)" style="width:100%;box-sizing:border-box;padding:11px;border-radius:10px;border:1.5px solid var(--border-strong,var(--border));background:var(--surface-0);color:var(--text-primary);font-size:15px;'+(extra||'')+'">';
@@ -7355,10 +7392,9 @@ window.appRpc = async function(fn, args){
     if (k==='cuisine'){
       const opts = [['pas','Pas d\'attente','#3FAE6A','#fff'],['moyenne','Attente moyenne','#FFD500','#1A1A1A'],['trop','Trop d\'attente','#E8432B','#fff']];
       return '<div style="display:flex;gap:8px">'+opts.map(function(o){ const on = state.duty.cuisine === o[0]; return '<button type="button" onclick="appAction(\'dutyCuisine\',\''+(on?'':o[0])+'\')" style="flex:1;min-height:48px;padding:6px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:'+(on?o[2]:'var(--surface-0)')+';color:'+(on?o[3]:'var(--text-primary)')+';font-size:13px;font-weight:800;cursor:pointer;'+(on?'box-shadow:2px 2px 0 #000':'')+'">'+o[1]+'</button>'; }).join('')+'</div>'+
-        '<div style="height:10px"></div>'+dutyArea('cuisineRem','Remarques sur la cuisine…',3)+
-        '<label style="display:flex;align-items:flex-start;gap:10px;margin:10px 0 0;font-size:13px;color:var(--text-primary);cursor:pointer"><input type="checkbox" '+(state.duty.ccCuisine?'checked ':'')+'onchange="dutySet(\'ccCuisine\',this.checked)" style="width:22px;height:22px;flex-shrink:0"><span>Mettre en copie Nicolas, Erwan et Mohammed</span></label>';
+        '<div style="height:10px"></div>'+dutyArea('cuisineRem','Remarques sur la cuisine…',3);
     }
-    if (k==='passation') return dutyField('Ateliers ?', dutyArea('passation.ateliers','',2))+dutyField('Autres infos ?', dutyArea('passation.autres','',3));
+    if (k==='passation') return dutyArea('passation.texte','Ateliers ? Autres infos ?',5);
     if (k==='departs') return dutyField('Salle', dutyInput('departs.salle','Ex : 00h30'))+dutyField('Bar', dutyInput('departs.bar','Ex : 01h00'))+dutyField('Roof', dutyInput('departs.roof','Ex : 01h30'));
     return '';
   }
@@ -7419,6 +7455,7 @@ window.appRpc = async function(fn, args){
     });
     let to = ''; try { to = localStorage.getItem('cm_duty_to') || ''; } catch(e){}
     out += '<div style="padding:12px;border-radius:12px;border:2.5px solid var(--border-strong,var(--border));background:var(--surface-1)">'+
+      '<div id="duty-recip" style="font-size:12px;color:var(--text-secondary);margin:0 0 10px;line-height:1.5">'+dutyRecipHtml()+'</div>'+
       '<button onclick="appAction(\'dutyShare\')" style="width:100%;padding:16px;margin:0 0 8px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#FF6FA5;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 #000;cursor:pointer">Partager le duty</button>'+
       (state.dutyMsg ? '<div style="padding:10px;border-radius:10px;background:#E6F4EA;color:#1E6B34;font-size:13px;font-weight:700;margin:0 0 8px">'+esc(state.dutyMsg)+'</div>' : '')+
       '<div style="font-size:12px;color:var(--text-secondary);margin:0">« Partager » copie le duty (avec les tableaux) puis ouvre ton mail : il n\'y a plus qu\'à coller.</div>'+
