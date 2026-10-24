@@ -3,7 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Copilote Restaurant</title>
+<title>Copilote Mama</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2A2A2A">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Copilote">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -93,6 +101,7 @@ window.appRpc = async function(fn, args){
   return r.data;
 };
 </script>
+<script>if('serviceWorker' in navigator && /^https?:/.test(location.protocol)){ window.addEventListener('load',function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); }); }</script>
 <script>
 (function(){
   const DEFAULT_BAR_RECETTES = [];
@@ -1774,6 +1783,22 @@ window.appRpc = async function(fn, args){
     }
   }
   window.addEventListener('online', function(){ flushPending(); });
+  // Suivi de réqui : rafraîchissement automatique (cave et étage se voient en direct), sans toucher à une saisie en cours.
+  setInterval(async function(){
+    try {
+      if (state.screen !== 'requi-follow' || (typeof document !== 'undefined' && document.hidden)) return;
+      if (readPending().length || _flushing) return;
+      const ae = document.activeElement;
+      if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+      const fresh = await getRequisitions(true);
+      if (JSON.stringify(fresh) !== JSON.stringify(state.requisitions || [])){
+        const ae2 = document.activeElement;
+        if (ae2 && /^(INPUT|TEXTAREA|SELECT)$/.test(ae2.tagName)) return;
+        state.requisitions = fresh;
+        render();
+      }
+    } catch(e){ /* hors ligne : on garde l'affichage actuel */ }
+  }, 20000);
   setInterval(function(){ if (readPending().length) flushPending(); }, 15000);
   async function getRequisitions(strict){
     try {
@@ -2188,7 +2213,7 @@ window.appRpc = async function(fn, args){
   async function doValidateChecklist(){
     state.isSubmitting = true;
     state.submittingMessage = 'Envoi de la checklist...';
-    render();
+    renderKeep();
     const subId = state.sublieuId;
     const cat = findCategory(state.categoryId);
     const sub = findSublieu(state.categoryId, subId);
@@ -2214,7 +2239,6 @@ window.appRpc = async function(fn, args){
       const validatedProgress = { checked: p.checked.slice(), operator: operatorAtValidation, validated: true, validatedAt: validatedAt, comment: p.comment || '' };
       await setProgress(subId, validatedProgress);
       state.progress[subId] = validatedProgress;
-      state.historique = await getHistorique();
       state.nightProgress = await loadNightProgress();
       state.screen = 'night';
     } else {
@@ -2223,7 +2247,6 @@ window.appRpc = async function(fn, args){
       const resetProgress = { checked: [], operator: null, validated: false, validatedAt: null, comment: '' };
       await setProgress(subId, resetProgress);
       state.progress[subId] = resetProgress;
-      state.historique = await getHistorique();
       state.screen = (state.categoryId === 'fermeture') ? 'fermeture' : 'home';
     }
     state.isSubmitting = false;
@@ -2281,6 +2304,10 @@ window.appRpc = async function(fn, args){
       }
       if (String(state.screen).indexOf('econome-') === 0){ state.requisitions = await getRequisitions(); }
       if (state.screen === 'archives'){ state.screen = 'checklistes-menu'; }
+      if (state.screen === 'historique' && state.managerUnlocked){
+        const hAll = await Promise.all([getHistorique(), getPertes(), getTemperatures(), getTracabilite(), getRequisitions()]);
+        state.historique = hAll[0]; state.pertes = hAll[1]; state.temperatures = hAll[2]; state.tracabilite = hAll[3]; state.requisitionsHist = hAll[4];
+      }
       if (state.screen === 'bar-messages'){ try { state.barMessages = await getBarMessages(false); const g = await getGangNames(); state.barMessageUsers = g.filter(function(u){ return u.poste === 'bar'; }).map(function(u){ return u.name; }); } catch(e){} }
       if (state.screen === 'requi-follow'){ state.requisitions = await getRequisitions(); state.followReqId = null; }
       if (state.screen === 'events-form' && state.eventsUnlocked){
@@ -2335,10 +2362,10 @@ window.appRpc = async function(fn, args){
       return;
     }
     try {
-      const [structureRaw, historique, migrationVersion] = await Promise.all([
-        getStructureRaw(), getHistorique(), getMigrationVersion()
+      // L'historique n'est plus chargé à la connexion : il l'est à l'ouverture des écrans qui l'utilisent.
+      const [structureRaw, migrationVersion] = await Promise.all([
+        getStructureRaw(), getMigrationVersion()
       ]);
-      state.historique = historique;
       if (migrationVersion >= CURRENT_MIGRATION_VERSION){
         // Chemin rapide : tout est déjà à jour, on saute toutes les vérifications
         // de migration (gain de temps important à chaque connexion).
@@ -2475,7 +2502,7 @@ window.appRpc = async function(fn, args){
       console.error('Erreur dans appAction("'+action+'"):', err);
       state.globalError = (err && err.message) ? err.message : String(err);
       state.isSubmitting = false;
-      render();
+      renderKeep();
     }
     // Si on est resté sur le même écran (ex: on a juste déplié une catégorie ou une checklist),
     // on remet la page exactement où elle était plutôt que de remonter en haut.
@@ -2539,7 +2566,7 @@ window.appRpc = async function(fn, args){
       if (!/^\d{2}:\d{2}$/.test(t)){ state.nightEndError = true; render(); return; }
       state.isSubmitting = true;
       state.submittingMessage = 'Envoi de ton heure de départ...';
-      render();
+      renderKeep();
       const author = state.name || 'Night';
       const message = 'Fin de shift Night : départ à ' + t.replace(':','h') + '.';
       const list = await getFeedbacks();
@@ -2615,7 +2642,7 @@ window.appRpc = async function(fn, args){
       const c = (codeInput.value||'').trim();
       if (!n || !c){
         state.simpleLoginError = 'Indique ton prénom et ton code personnel.';
-        render();
+        renderKeep();
         return;
       }
       const match = await serverLogin('gang', c, n);
@@ -2942,12 +2969,12 @@ window.appRpc = async function(fn, args){
       }
       if (fileInput.files && fileInput.files[0] && fileInput.files[0].size > 3.5 * 1024 * 1024){
         state.eventsSaveError = 'pdf-too-large';
-        render();
+        renderKeep();
         return;
       }
       state.isSubmitting = true;
       state.submittingMessage = 'Envoi de la fiche...';
-      render();
+      renderKeep();
       const id = editing ? editing.id : ('evt-'+Date.now());
       let filename = editing ? editing.filename : null;
       let newPdfDataUrl = null;
@@ -3014,7 +3041,7 @@ window.appRpc = async function(fn, args){
       const type = typeSelect === 'Autre' ? typeOther : typeSelect;
       if (!date || !type){
         state.rhSaveError = true;
-        render();
+        renderKeep();
         return;
       }
       let list = state.rhEvents || [];
@@ -3342,8 +3369,10 @@ window.appRpc = async function(fn, args){
       render();
     }
     else if (action === 'accessFormRoleChanged'){
+      const _keepName = (document.getElementById('access-user-name')||{}).value || '';
+      const _keepCode = (document.getElementById('access-user-code')||{}).value || '';
       state.accessFormRole = payload;
-      render();
+      renderKeep();
     }
     else if (action === 'editAccessUser'){
       state.accessEditingId = payload;
@@ -3360,7 +3389,7 @@ window.appRpc = async function(fn, args){
       const code = document.getElementById('access-user-code').value.trim();
       if (!name || !/^[0-9]{4}$/.test(code)){
         state.accessUserError = 'Indique un prénom et un code à 4 chiffres.';
-        render();
+        renderKeep();
         return;
       }
       const isMamaGang = (state.mamaGangUsers||[]).some(function(u){ return u.id === state.accessEditingId; });
@@ -3368,7 +3397,7 @@ window.appRpc = async function(fn, args){
         let gangList = state.mamaGangUsers || [];
         if (gangList.some(function(u){ return u.code === code && u.id !== state.accessEditingId; })){
           state.accessUserError = 'Ce code est déjà utilisé, choisis-en un autre.';
-          render();
+          renderKeep();
           return;
         }
         const posteEl = document.getElementById('access-user-poste');
@@ -3381,7 +3410,7 @@ window.appRpc = async function(fn, args){
         const editingUser = list.find(function(u){ return u.id === state.accessEditingId; });
         if (list.some(function(u){ return u.role === (editingUser?editingUser.role:null) && u.code === code && u.id !== state.accessEditingId; })){
           state.accessUserError = 'Ce code est déjà utilisé pour ce rôle, choisis-en un autre.';
-          render();
+          renderKeep();
           return;
         }
         if (editingUser){ editingUser.name = name; editingUser.code = code; }
@@ -3398,14 +3427,14 @@ window.appRpc = async function(fn, args){
       const code = document.getElementById('access-user-code').value.trim();
       if (!name || !/^[0-9]{4}$/.test(code)){
         state.accessUserError = 'Indique un prénom et un code à 4 chiffres.';
-        render();
+        renderKeep();
         return;
       }
       if (role === 'mamagang'){
         let gangList = state.mamaGangUsers || [];
         if (gangList.some(function(u){ return u.code === code; })){
           state.accessUserError = 'Ce code est déjà utilisé, choisis-en un autre.';
-          render();
+          renderKeep();
           return;
         }
         const posteEl = document.getElementById('access-user-poste');
@@ -3419,7 +3448,7 @@ window.appRpc = async function(fn, args){
       let list = state.accessUsers || [];
       if (list.some(function(u){ return u.role === role && u.code === code; })){
         state.accessUserError = 'Ce code est déjà utilisé pour ce rôle, choisis-en un autre.';
-        render();
+        renderKeep();
         return;
       }
       list.push({ id:'usr-'+Date.now(), name: name, role: role, code: code });
@@ -3459,13 +3488,13 @@ window.appRpc = async function(fn, args){
       const poste = posteEl ? posteEl.value : 'non-attribue';
       if (!name || !/^[0-9]{4}$/.test(code)){
         state.mamaGangUserError = 'Indique un prénom et un code à 4 chiffres.';
-        render();
+        renderKeep();
         return;
       }
       let list = state.mamaGangUsers || [];
       if (list.some(function(u){ return u.code === code; })){
         state.mamaGangUserError = 'Ce code est déjà utilisé, choisis-en un autre.';
-        render();
+        renderKeep();
         return;
       }
       list.push({ id:'gang-'+Date.now(), name: name, code: code, poste: poste });
@@ -3491,13 +3520,13 @@ window.appRpc = async function(fn, args){
       const poste = posteEl ? posteEl.value : 'non-attribue';
       if (!name || !/^[0-9]{4}$/.test(code)){
         state.mamaGangUserError = 'Indique un prénom et un code à 4 chiffres.';
-        render();
+        renderKeep();
         return;
       }
       let list = state.mamaGangUsers || [];
       if (list.some(function(u){ return u.code === code && u.id !== state.mamaGangEditingId; })){
         state.mamaGangUserError = 'Ce code est déjà utilisé, choisis-en un autre.';
-        render();
+        renderKeep();
         return;
       }
       const target = list.find(function(u){ return u.id === state.mamaGangEditingId; });
@@ -3547,7 +3576,7 @@ window.appRpc = async function(fn, args){
       }
       state.isSubmitting = true;
       state.submittingMessage = 'Envoi du planning...';
-      render();
+      renderKeep();
       const pdfDataUrl = await new Promise(function(resolve, reject){
         const reader = new FileReader();
         reader.onload = function(){ resolve(reader.result); };
@@ -3693,12 +3722,12 @@ window.appRpc = async function(fn, args){
         : (state.remonteeLocation || '');
       if (!message || !recipient){
         state.feedbackError = true;
-        render();
+        renderKeep();
         return;
       }
       state.isSubmitting = true;
       state.submittingMessage = 'Envoi de la remontée...';
-      render();
+      renderKeep();
       const list = await getFeedbacks();
       const recipientsList = recipient === 'managers' ? ['managers'] : [recipient, 'managers'];
       list.unshift({
@@ -4058,7 +4087,7 @@ window.appRpc = async function(fn, args){
       const prodName = (prodInput.value||'').trim();
       if (!name || !prodName){
         state.adminReqError = 'Indique un nom de frigo et un premier produit.';
-        render();
+        renderKeep();
         return;
       }
       const sub = findSublieu(state.adminReqCatId, state.adminReqSubId);
@@ -4310,13 +4339,13 @@ window.appRpc = async function(fn, args){
       }
       if (!produit || !quantite){
         state.perteError = true;
-        render();
+        renderKeep();
         return;
       }
       state.perteError = false;
       state.isSubmitting = true;
       state.submittingMessage = 'Envoi de la perte...';
-      render();
+      renderKeep();
       const now = new Date();
       await addPerte({
         id: 'perte-'+Date.now(),
@@ -4342,7 +4371,7 @@ window.appRpc = async function(fn, args){
     else if (action === 'saveTracabilite'){
       state.isSubmitting = true;
       state.submittingMessage = 'Envoi de la traçabilité...';
-      render();
+      renderKeep();
       const cat = findCategory(state.categoryId);
       const sub = findSublieu(state.categoryId, state.sublieuId);
       const entries = sub.products.map(function(product, i){
@@ -4375,13 +4404,13 @@ window.appRpc = async function(fn, args){
         return item.obligatoire && !(state.temperatureChecklistChecked && state.temperatureChecklistChecked[item.id]);
       })){
         state.temperatureChecklistError = true;
-        render();
+        renderKeep();
         return;
       }
       state.temperatureChecklistError = false;
       state.isSubmitting = true;
       state.submittingMessage = 'Envoi du relevé...';
-      render();
+      renderKeep();
       const readings = sub.fridges.map(function(fridge, i){
         const fridgeName = typeof fridge === 'object' ? fridge.name : fridge;
         const input = document.getElementById('temp-input-'+i);
@@ -4583,7 +4612,7 @@ window.appRpc = async function(fn, args){
     else if (action === 'saveRequisition'){
       state.isSubmitting = true;
       state.submittingMessage = 'Envoi de la réqui...';
-      render();
+      renderKeep();
       const cat = findCategory(state.categoryId);
       const sub = findSublieu(state.categoryId, state.sublieuId);
       const now = new Date();
@@ -7796,6 +7825,27 @@ window.appRpc = async function(fn, args){
     return out;
   }
 
+  // Redessine l'écran en conservant ce qui est déjà tapé dans les champs (cas d'une erreur de saisie).
+  function renderKeep(){
+    const vals = {};
+    try {
+      const root0 = document.getElementById('app');
+      root0.querySelectorAll('input[id],textarea[id],select[id]').forEach(function(el){
+        if (el.type === 'file' || el.type === 'password') return;
+        if (el.type === 'checkbox' || el.type === 'radio') vals[el.id] = { c: el.checked };
+        else if (el.value !== '') vals[el.id] = { v: el.value };
+      });
+    } catch(e){}
+    render();
+    try {
+      Object.keys(vals).forEach(function(id){
+        const el = document.getElementById(id);
+        if (!el) return;
+        if ('c' in vals[id]) el.checked = vals[id].c;
+        else if (el.value === '' || el.tagName === 'SELECT') el.value = vals[id].v;
+      });
+    } catch(e){}
+  }
   function render(){
     const root = document.getElementById('app');
     if (state.loading){
