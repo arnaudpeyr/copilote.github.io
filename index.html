@@ -2759,13 +2759,14 @@ window.appRpc = async function(fn, args){
       const c = (codeInput.value||'').trim();
       if (!n || !c){
         state.simpleLoginError = 'Indique ton prénom et ton code personnel.';
-        renderKeep();
+        renderKeep(); cmPinPaint();
         return;
       }
       const match = await serverLogin('gang', c, n);
       if (!match.ok){
         state.simpleLoginError = match.locked ? "Trop d'essais. Réessaie dans une minute." : (match.error ? "Connexion impossible, réessaie." : "Prénom ou code incorrect. Demande ton code à un manager.");
-        render();
+        renderKeep();
+        { const h = document.getElementById('login-code'); if (h) h.value = ''; cmPinPaint(); }
         return;
       }
       state.simpleLoginError = false;
@@ -5052,6 +5053,22 @@ window.appRpc = async function(fn, args){
   }
 
 
+  // Pavé numérique de l'écran de connexion
+  function cmPinPaint(){
+    const h = document.getElementById('login-code'); const v = h ? (h.value||'') : '';
+    const dots = document.querySelectorAll('#pin-dots i');
+    for (let i=0;i<dots.length;i++) dots[i].style.background = i < v.length ? '#E8432B' : '#fff';
+  }
+  window.cmPin = function(k){
+    const h = document.getElementById('login-code'); if (!h) return;
+    let v = h.value || '';
+    if (k === 'del') v = v.slice(0,-1);
+    else if (k === 'ok'){ if (v.length === 4 || (v.length > 0 && v.length <= 4)) { appAction('loginSimple'); } return; }
+    else if (v.length < 4) v += k;
+    h.value = v; cmPinPaint();
+    if (k !== 'del' && v.length === 4) appAction('loginSimple');
+  };
+
   function screenLoginSimple(){
     const word = 'Copilote';
     const letters = word.split('').map(function(ch, i){
@@ -5076,11 +5093,19 @@ window.appRpc = async function(fn, args){
       '<div style="font-size:12px;color:var(--text-muted);letter-spacing:2.5px;text-transform:uppercase;margin-top:-2px;font-weight:600">Mama Shelter Toulouse</div>'+
       '<div style="max-width:300px;margin:14px auto 0;padding:16px 20px;background:#1E5FA8;border:2.5px solid var(--border-strong,#000);border-radius:18px;box-shadow:5px 5px 0 var(--border-strong,#000);text-align:left;transform:rotate(-0.4deg)">'+
         '<h1 class="mama-title" style="font-size:17px;font-weight:800;margin:0 0 4px;text-align:center;color:#fff">Accès Mama Gang</h1>'+
-        '<p style="color:rgba(255,255,255,0.85);margin:0 0 12px;font-size:12px;text-align:center">Ton prénom et ton code personnel</p>'+
+        '<p style="color:rgba(255,255,255,0.85);margin:0 0 12px;font-size:12px;text-align:center">Ton prénom, puis ton code personnel</p>'+
         '<input id="login-name" type="text" placeholder="Ex: Arnaud" style="width:100%;box-sizing:border-box;padding:10px;margin:0 0 8px;border-radius:10px;border:1.5px solid '+(state.simpleLoginError?'var(--border-danger,#E24B4A)':'transparent')+';background:#fff;color:var(--text-primary);font-size:15px;text-align:center">'+
-        '<input id="login-code" type="password" inputmode="numeric" maxlength="4" placeholder="Code à 4 chiffres" style="width:100%;box-sizing:border-box;padding:10px;margin:0 0 8px;border-radius:10px;border:1.5px solid '+(state.simpleLoginError?'var(--border-danger,#E24B4A)':'transparent')+';background:#fff;color:var(--text-primary);font-size:15px;text-align:center;letter-spacing:4px">'+
-        (state.simpleLoginError ? '<p style="color:#FFD9D9;font-size:13px;margin:0 0 12px;text-align:center">'+esc(state.simpleLoginError)+'</p>' : '')+
-        '<button onclick="appAction(\'loginSimple\')" style="width:100%;padding:14px;border-radius:10px;border:2.5px solid var(--border-strong,#000);background:#FF6FA5;color:#fff;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">Continuer</button>'+
+        '<input id="login-code" type="hidden" value="">'+
+        '<div id="pin-dots" style="display:flex;gap:14px;justify-content:center;margin:10px 0 12px">'+'<i></i><i></i><i></i><i></i>'.replace(/<i><\/i>/g,'<i style="width:18px;height:18px;border-radius:50%;border:2.5px solid #000;background:#fff;display:block"></i>')+'</div>'+
+        (state.simpleLoginError ? '<p style="color:#FFD9D9;font-size:13px;margin:0 0 10px;text-align:center">'+esc(state.simpleLoginError)+'</p>' : '')+
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+
+        ['1','2','3','4','5','6','7','8','9','del','0','ok'].map(function(k, i){
+          const lab = k==='del' ? '⌫' : (k==='ok' ? 'OK' : k);
+          const bg = k==='del' ? '#FFD500' : (k==='ok' ? '#FF6FA5' : ['#fff','#FFD0E2','#BDEBF2','#FFE3B8'][i%4]);
+          const fg = k==='ok' ? '#fff' : '#1A1A1A';
+          return '<button type="button" onclick="cmPin(\''+k+'\')" aria-label="'+(k==='del'?'Effacer':(k==='ok'?'Valider':k))+'" style="min-height:48px;border-radius:14px;border:2.5px solid #000;background:'+bg+';color:'+fg+';font-size:22px;font-weight:800;box-shadow:2px 2px 0 #000;cursor:pointer;font-family:inherit">'+lab+'</button>';
+        }).join('')+
+        '</div>'+
       '</div>'+
       '<div style="max-width:320px;margin:14px auto 0;display:flex;flex-wrap:wrap;justify-content:center;gap:10px 4px">'+
         quickRolesHtml+
