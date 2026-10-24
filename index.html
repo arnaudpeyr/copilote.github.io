@@ -1134,6 +1134,8 @@ window.appRpc = async function(fn, args){
     simpleLoginError: false,
     rhLoginCodeError: false,
     techniqueUnlocked: false,
+    gangRoles: [],
+    techniqueFromGang: false,
     techniqueLoginCodeError: false,
     nightUnlocked: false,
     nightLoginCodeError: false,
@@ -1292,6 +1294,7 @@ window.appRpc = async function(fn, args){
   // lecture n'a pas réussi : on ne remplace jamais un historique par une liste vide.
   const NET_MSG = "Pas de réseau : impossible d'envoyer pour le moment. Rien n'a été modifié, réessaie dès que la connexion revient.";
   const _readState = {};
+  let _undoCap = null; // pendant une suppression : anciennes valeurs des clés modifiées
   function isNotFoundErr(e){ return /not found/i.test(String((e && e.message) || e)); }
   function isNetworkErr(e){
     const m = String((e && (e.message || e.details)) || e);
@@ -1306,6 +1309,10 @@ window.appRpc = async function(fn, args){
       },
       set: async function(k, v, sh){
         if (_readState[k] === 'fail') throw new Error(NET_MSG);
+        if (_undoCap && !(k in _undoCap)){
+          try { _undoCap[k] = (await raw.get(k, sh)).value; }
+          catch(e){ if (isNotFoundErr(e)) _undoCap[k] = null; else _undoCap.__bad = true; }
+        }
         try { const r = await raw.set(k, v, sh); _readState[k] = 'ok'; return r; }
         catch(e){ if (isNetworkErr(e)) throw new Error(NET_MSG); throw e; }
       },
@@ -1931,7 +1938,7 @@ window.appRpc = async function(fn, args){
     if (window.appRpc){
       try {
         const r = await window.appRpc('app_login', { p_role: role, p_code: code, p_name: name || null });
-        if (r && r.ok) return { ok:true, id:r.id, name:r.name || '', poste:r.poste || null };
+        if (r && r.ok) return { ok:true, id:r.id, name:r.name || '', poste:r.poste || null, roles:Array.isArray(r.roles) ? r.roles : [] };
         if (r && r.locked){ state.loginErrText = 'Trop d\'essais. Réessaie dans une minute.'; return { ok:false, locked:true }; }
         return { ok:false };
       } catch(e){
@@ -1943,7 +1950,7 @@ window.appRpc = async function(fn, args){
     if (role === 'gang'){
       const g = await getMamaGangUsers();
       const m = g.find(function(u){ return u.code === code && (u.name||'').toLowerCase() === String(name||'').toLowerCase(); });
-      return m ? { ok:true, id:m.id, name:m.name, poste:m.poste||null } : { ok:false };
+      return m ? { ok:true, id:m.id, name:m.name, poste:m.poste||null, roles:m.roles||[] } : { ok:false };
     }
     const m = findAccessUser(await getAccessUsers(), role, code);
     return m ? { ok:true, id:m.id, name:m.name||'' } : { ok:false };
@@ -2165,7 +2172,7 @@ window.appRpc = async function(fn, args){
       '<span style="flex:1">'+esc(t.label)+'</span>'+
       '<input type="number" min="1" max="'+total+'" value="'+(index+1)+'" onchange="appAction(\'moveTaskToPosition\', {catId:\''+catId+'\', subId:\''+subId+'\', taskId:\''+t.id+'\', position:parseInt(this.value,10)})" style="width:38px;padding:4px;text-align:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:12px">'+
       '<span onclick="appAction(\'startEditTask\',\''+t.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',13)+'</span>'+
-      '<span onclick="appAction(\'deleteTask\', {catId:\''+catId+'\', subId:\''+subId+'\', taskId:\''+t.id+'\'})" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',13)+'</span>'+
+      '<span onclick="appAction(\'deleteTask\', {catId:\''+catId+'\', subId:\''+subId+'\', taskId:\''+t.id+'\'})" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',13)+'</span>'+
     '</div>';
   }
 
@@ -2185,7 +2192,7 @@ window.appRpc = async function(fn, args){
     }
     const deleteAction = listKey === 'fridges' ? 'deleteFridge' : 'deleteRequisitionProduct';
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px;color:var(--text-secondary);gap:5px">'+
-      '<span style="flex:1">'+esc(displayText)+(subLabel?' <span style="color:var(--text-muted);font-size:11px">('+esc(subLabel)+')</span>':'')+'</span>'+
+      '<span style="flex:1">'+esc(displayText)+(subLabel?' <span style="color:var(--text-muted);font-size:12px">('+esc(subLabel)+')</span>':'')+'</span>'+
       '<input type="number" min="1" max="'+total+'" value="'+(index+1)+'" onchange="appAction(\'moveListItemToPosition\', {catId:\''+catId+'\', subId:\''+subId+'\', nestedId:\''+(nestedId||'')+'\', listKey:\''+listKey+'\', index:'+index+', position:parseInt(this.value,10)})" style="width:38px;padding:4px;text-align:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:12px">'+
       '<span onclick="appAction(\'startEditListItem\',\''+key+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',13)+'</span>'+
       '<span onclick="appAction(\''+deleteAction+'\', {catId:\''+catId+'\', subId:\''+subId+'\', nestedId:\''+(nestedId||'')+'\', index:'+index+'})" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',13)+'</span>'+
@@ -2254,7 +2261,7 @@ window.appRpc = async function(fn, args){
   }
 
   const SESSION_SNAPSHOT_KEY = 'copilote_session_snapshot';
-  const SESSION_SNAPSHOT_FIELDS = ['name','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','agm','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','prestationDraftZoneOther','prestationDraftType','prestationDraftTypeOther','entertainmentEditingId','entFormDate','entFormType','entFormInfo','entFormPlace','cameFromManagerMenu','suiviFrom','requiHubFrom','requiHubStep','requiViaHub','followMode','categoryId','sublieuId'];
+  const SESSION_SNAPSHOT_FIELDS = ['name','gangRoles','techniqueFromGang','managerUnlocked','economeUnlocked','entertainmentUnlocked','eventsUnlocked','rhUnlocked','techniqueUnlocked','nightUnlocked','adminUnlocked','screen','loginStep','categoryId','sublieuId','agm','remonteeRecipient','remonteeFromNight','nightEndTime','remonteeLocation','remonteeLocationManual','remonteeMessageDraft','remonteePhoto','eventsEditingId','eventFormDate','eventFormGroup','eventFormGuests','eventFormNote','eventFormPrestations','prestationDraftTime','prestationDraftZone','prestationDraftInfo','prestationDraftZoneOther','prestationDraftType','prestationDraftTypeOther','entertainmentEditingId','entFormDate','entFormType','entFormInfo','entFormPlace','cameFromManagerMenu','suiviFrom','requiHubFrom','requiHubStep','requiViaHub','followMode','categoryId','sublieuId'];
   function compressImageDataUrl(dataUrl, maxWidth, quality){
     return new Promise(function(resolve){
       try {
@@ -2304,12 +2311,22 @@ window.appRpc = async function(fn, args){
       }
       if (String(state.screen).indexOf('econome-') === 0){ state.requisitions = await getRequisitions(); }
       if (state.screen === 'archives'){ state.screen = 'checklistes-menu'; }
+      if (state.screen === 'morning'){ state.screen = 'manager-menu'; }
       if (state.screen === 'historique' && state.managerUnlocked){
         const hAll = await Promise.all([getHistorique(), getPertes(), getTemperatures(), getTracabilite(), getRequisitions()]);
         state.historique = hAll[0]; state.pertes = hAll[1]; state.temperatures = hAll[2]; state.tracabilite = hAll[3]; state.requisitionsHist = hAll[4];
       }
       if (state.screen === 'bar-messages'){ try { state.barMessages = await getBarMessages(false); const g = await getGangNames(); state.barMessageUsers = g.filter(function(u){ return u.poste === 'bar'; }).map(function(u){ return u.name; }); } catch(e){} }
       if (state.screen === 'requi-follow'){ state.requisitions = await getRequisitions(); state.followReqId = null; }
+      // Écrans de liste : on recharge leurs données (utile après un rechargement, ex. « Annuler » une suppression).
+      try {
+        const scr = state.screen;
+        if (scr === 'events-list' || scr === 'events-form') state.eventSheets = await getEventSheets();
+        if (scr === 'entertainment-list' || scr === 'entertainment-form') state.events = await getEvents();
+        if (scr === 'rh-list' || scr === 'rh-form') state.rhEvents = await getRhEvents();
+        if (scr === 'process-infos' || scr === 'process-infos-read') state.processInfos = await getProcessInfos();
+        if (scr === 'bar-recettes-editor' || scr === 'recettes-read') state.barRecettes = await getBarRecettes();
+      } catch(e){}
       if (state.screen === 'events-form' && state.eventsUnlocked){
         state.eventSheets = await getEventSheets();
       }
@@ -2473,7 +2490,7 @@ window.appRpc = async function(fn, args){
         '<h1 style="font-size:18px;font-weight:600;margin:0 0 12px;color:var(--text-primary)">Impossible de charger les données</h1>'+
         '<p style="font-size:14px;color:var(--text-secondary);margin:0 0 16px">Vérifie ta connexion (Wi-Fi ou réseau mobile) puis réessaie. Tes données n\'ont pas été touchées.</p>'+
         '<button onclick="location.reload()" style="padding:12px 24px;border-radius:10px;font-size:14px;font-weight:800;text-transform:uppercase;cursor:pointer;border:2.5px solid var(--border-strong,#000);background:var(--text-accent,#185FA5);color:#fff">Réessayer</button>'+
-        '<p style="font-size:11px;color:var(--text-secondary);margin:16px 0 0;word-break:break-word">Détail : '+String((e && e.message) || e).replace(/[<>&]/g,'')+'</p>'+
+        '<p style="font-size:12px;color:var(--text-secondary);margin:16px 0 0;word-break:break-word">Détail : '+String((e && e.message) || e).replace(/[<>&]/g,'')+'</p>'+
         '</div>';
     }
   }
@@ -2496,6 +2513,8 @@ window.appRpc = async function(fn, args){
     let scrollYBefore = 0;
     try { scrollYBefore = window.scrollY || (document.documentElement && document.documentElement.scrollTop) || 0; } catch(e){}
     const screenBefore = state.screen;
+    const isDelete = /^delete/.test(String(action));
+    if (isDelete) _undoCap = {};
     try {
       await appActionInner(action, payload);
     } catch(err){
@@ -2503,6 +2522,10 @@ window.appRpc = async function(fn, args){
       state.globalError = (err && err.message) ? err.message : String(err);
       state.isSubmitting = false;
       renderKeep();
+    }
+    if (isDelete){
+      const cap = _undoCap; _undoCap = null;
+      if (cap && !cap.__bad && Object.keys(cap).length) showUndoBar(cap);
     }
     // Si on est resté sur le même écran (ex: on a juste déplié une catégorie ou une checklist),
     // on remet la page exactement où elle était plutôt que de remonter en haut.
@@ -2516,6 +2539,54 @@ window.appRpc = async function(fn, args){
       }
     } catch(e){}
   };
+
+  // Barre « Supprimé · Annuler » (8 secondes) : remet les anciennes valeurs puis recharge l'écran.
+  let _undoTimer = null;
+  function showUndoBar(cap){
+    try {
+      const old = document.getElementById('undo-bar'); if (old) old.remove();
+      clearTimeout(_undoTimer);
+      const bar = document.createElement('div');
+      bar.id = 'undo-bar';
+      bar.style.cssText = 'position:fixed;left:12px;right:12px;bottom:76px;z-index:10000;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 8px 8px 16px;border-radius:12px;background:#1A1A1A;color:#fff;font-size:14px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.4);max-width:420px;margin:0 auto';
+      bar.innerHTML = '<span>Supprimé</span><button id="undo-btn" style="min-height:44px;padding:0 18px;border-radius:10px;border:2px solid #fff;background:transparent;color:#fff;font-size:14px;font-weight:800;text-transform:uppercase;cursor:pointer">Annuler</button>';
+      document.body.appendChild(bar);
+      document.getElementById('undo-btn').onclick = async function(){
+        this.disabled = true; this.textContent = '…';
+        try {
+          for (const k of Object.keys(cap)){
+            if (cap[k] === null) await window.storage.delete(k, true);
+            else await window.storage.set(k, cap[k], true);
+          }
+          location.reload();
+        } catch(e){
+          bar.firstChild.textContent = 'Annulation impossible (réseau)';
+          this.remove();
+          _undoTimer = setTimeout(function(){ bar.remove(); }, 4000);
+        }
+      };
+      _undoTimer = setTimeout(function(){ bar.remove(); }, 8000);
+    } catch(e){}
+  }
+
+  // Espace Technique : remontées destinées à la technique (accès par code Tech ou par droit « Technique » d'un profil Gang).
+  async function enterTechniqueSpace(){
+    state.techniqueLoginCodeError = false;
+    state.techniqueUnlocked = true;
+    state.viewFeedbacksCategory = 'technique';
+    const list = await getFeedbacks();
+    state.feedbacksList = list;
+    let changed = false;
+    list.forEach(function(f){
+      if ((f.recipients||[]).indexOf('technique') >= 0){
+        f.readBy = f.readBy || {};
+        if (!f.readBy.technique){ f.readBy.technique = true; changed = true; }
+      }
+    });
+    if (changed){ await saveFeedbacks(list); await resetFeedbackCount('technique'); }
+    state.feedbackCounts = await getFeedbackCountsCache();
+    state.screen = 'view-feedbacks';
+  }
 
   async function appActionInner(action, payload){
     if (action === 'dismissGlobalError'){
@@ -2653,6 +2724,8 @@ window.appRpc = async function(fn, args){
       }
       state.simpleLoginError = false;
       state.name = match.name;
+      state.gangRoles = match.roles || [];
+      if (state.gangRoles.length){ try { state.feedbackCounts = await getFeedbackCountsCache(); } catch(e){} }
       state.managerUnlocked = false;
       const [events, eventSheets, rhEvents] = await Promise.all([getEvents(), getEventSheets(), getRhEvents()]);
       state.events = events;
@@ -2769,22 +2842,9 @@ window.appRpc = async function(fn, args){
       const code = (input.value||'').trim();
       const matchTech = await serverLogin('technique', code);
       if (matchTech.ok){
-        state.techniqueLoginCodeError = false;
-        state.techniqueUnlocked = true;
         if (matchTech.name) state.name = matchTech.name;
-        state.viewFeedbacksCategory = 'technique';
-        const list = await getFeedbacks();
-        state.feedbacksList = list;
-        let changed = false;
-        list.forEach(function(f){
-          if ((f.recipients||[]).indexOf('technique') >= 0){
-            f.readBy = f.readBy || {};
-            if (!f.readBy.technique){ f.readBy.technique = true; changed = true; }
-          }
-        });
-        if (changed){ await saveFeedbacks(list); await resetFeedbackCount('technique'); }
-        state.feedbackCounts = await getFeedbackCountsCache();
-        state.screen = 'view-feedbacks';
+        state.techniqueFromGang = false;
+        await enterTechniqueSpace();
       } else {
         state.techniqueLoginCodeError = true;
       }
@@ -3079,6 +3139,7 @@ window.appRpc = async function(fn, args){
       }
     }
     else if (action === 'logout'){
+      state.gangRoles = []; state.techniqueFromGang = false;
       state.name=''; state.managerUnlocked=false; state.economeUnlocked=false; state.entertainmentUnlocked=false; state.eventsUnlocked=false; state.rhUnlocked=false; state.adminUnlocked=false; state.techniqueUnlocked=false; state.nightUnlocked=false; state.cameFromManagerMenu=false; state.loginStep='simple'; state.screen='login';
       try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(SESSION_SNAPSHOT_KEY); } catch(e){}
       render();
@@ -3091,6 +3152,7 @@ window.appRpc = async function(fn, args){
       state.events = events;
       state.eventSheets = eventSheets;
       state.rhEvents = rhEvents;
+      if ((state.gangRoles || []).length){ try { state.feedbackCounts = await getFeedbackCountsCache(); } catch(e){} }
       state.screen = 'home'; render();
     }
     else if (action === 'openEconomeDays'){
@@ -3402,7 +3464,8 @@ window.appRpc = async function(fn, args){
         }
         const posteEl = document.getElementById('access-user-poste');
         const target = gangList.find(function(u){ return u.id === state.accessEditingId; });
-        if (target){ target.name = name; target.code = code; target.poste = posteEl ? posteEl.value : (target.poste||'non-attribue'); }
+        const xTechE = document.getElementById('access-user-extra-technique');
+        if (target){ target.name = name; target.code = code; target.poste = posteEl ? posteEl.value : (target.poste||'non-attribue'); target.roles = (xTechE && xTechE.checked) ? ['technique'] : []; }
         await saveMamaGangUsers(gangList);
         state.mamaGangUsers = gangList;
       } else {
@@ -3438,7 +3501,8 @@ window.appRpc = async function(fn, args){
           return;
         }
         const posteEl = document.getElementById('access-user-poste');
-        gangList.push({ id:'gang-'+Date.now(), name: name, code: code, poste: posteEl ? posteEl.value : 'non-attribue' });
+        const xTech = document.getElementById('access-user-extra-technique');
+        gangList.push({ id:'gang-'+Date.now(), name: name, code: code, poste: posteEl ? posteEl.value : 'non-attribue', roles: (xTech && xTech.checked) ? ['technique'] : [] });
         await saveMamaGangUsers(gangList);
         state.mamaGangUsers = gangList;
         state.accessUserError = false;
@@ -3747,6 +3811,15 @@ window.appRpc = async function(fn, args){
       state.isSubmitting = false;
       render();
     }
+    else if (action === 'goMorning'){
+      state.morning = { hist: [], loaded: false };
+      state.screen = 'morning';
+      render();
+      const hist = await getHistorique();
+      state.structure = await getStructureRaw();
+      state.morning = { hist: hist, loaded: true };
+      render();
+    }
     else if (action === 'goViewFeedbacks'){
       state.viewFeedbacksCategory = payload;
       const list = await getFeedbacks();
@@ -3766,12 +3839,22 @@ window.appRpc = async function(fn, args){
       state.screen = 'view-feedbacks';
       render();
     }
+    else if (action === 'openRoleSpace'){
+      if (payload === 'technique' && (state.gangRoles || []).indexOf('technique') >= 0){
+        state.techniqueFromGang = true;
+        await enterTechniqueSpace();
+        render();
+      }
+    }
     else if (action === 'backFromFeedbacks'){
       if (state.viewFeedbacksCategory === 'managers') state.screen = 'manager-menu';
       else if (state.viewFeedbacksCategory === 'econome') state.screen = 'econome-days';
       else if (state.viewFeedbacksCategory === 'events') state.screen = 'events-list';
       else if (state.viewFeedbacksCategory === 'entertainment') state.screen = 'entertainment-list';
       else if (state.viewFeedbacksCategory === 'rh') state.screen = 'rh-list';
+      else if (state.viewFeedbacksCategory === 'technique' && state.techniqueFromGang){
+        state.techniqueUnlocked = false; state.techniqueFromGang = false; state.screen = 'home';
+      }
       else if (state.viewFeedbacksCategory === 'technique'){
         state.name=''; state.techniqueUnlocked=false; state.loginStep='simple'; state.screen='login';
       }
@@ -4895,7 +4978,7 @@ window.appRpc = async function(fn, args){
     const quickRolesHtml = quickRoles.map(function(r){
       return '<div onclick="appAction(\''+r.action+'\')" style="flex:0 0 62px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer">'+
         '<div style="width:42px;height:42px;border-radius:50%;background:'+r.color+';color:'+r.fg+';border:2px solid var(--border-strong,#000);display:flex;align-items:center;justify-content:center">'+icon(r.icon,26)+'</div>'+
-        '<span style="font-size:11px;color:var(--text-secondary);font-weight:700;text-transform:uppercase;letter-spacing:.2px">'+r.label+'</span>'+
+        '<span style="font-size:12px;color:var(--text-secondary);font-weight:700;text-transform:uppercase;letter-spacing:.2px">'+r.label+'</span>'+
       '</div>';
     }).join('');
     return '<div style="padding:18px 20px 12px;text-align:center">'+
@@ -5136,6 +5219,16 @@ window.appRpc = async function(fn, args){
       '</div></div>';
     out += renderWhatsupCalendar(3, 10);
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:10px">';
+    if ((state.gangRoles || []).indexOf('technique') >= 0){
+      const tc = (state.feedbackCounts && state.feedbackCounts.technique) || 0;
+      out += '<div onclick="appAction(\'openRoleSpace\',\'technique\')" class="'+(tc>0?'feedback-alert':'')+'" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:2.5px solid var(--border-strong,#000);border-radius:14px;background:#2AB0C5;color:#fff;box-shadow:3px 3px 0 var(--border-strong,#000);cursor:pointer">'+
+        iconBadge('tool', '#fff', '#2AB0C5')+
+        '<div style="flex:1"><div class="mama-title" style="font-size:15px;color:#fff">Espace Technique</div>'+
+        '<div style="font-size:12px;opacity:.9;margin-top:2px">Remontées techniques</div></div>'+
+        (tc>0 ? '<span style="background:#E8432B;color:#fff;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:800">'+tc+'</span>' : '')+
+        icon('chevronRight',18)+
+      '</div>';
+    }
     out += '<div style="border:2.5px solid var(--border-strong,#000);border-radius:14px;background:var(--surface-1);overflow:hidden;box-shadow:3px 3px 0 var(--border-strong,#000)">'+
       '<div onclick="appAction(\'toggleInfosUtiles\')" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer">'+
         iconBadge('clipboard', '#2AB0C5', '#fff')+
@@ -5457,7 +5550,7 @@ window.appRpc = async function(fn, args){
         out += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1)">'+
           '<div style="flex:1">'+
             '<div style="font-size:13px;font-weight:600;color:var(--text-primary)">'+esc(product.name)+'</div>'+
-            '<div style="font-size:11px;color:var(--text-muted)">'+esc(product.unit||'')+(product.parstock!=null?' · stock parfait '+esc(product.parstock):'')+'</div>'+
+            '<div style="font-size:12px;color:var(--text-muted)">'+esc(product.unit||'')+(product.parstock!=null?' · stock parfait '+esc(product.parstock):'')+'</div>'+
           '</div>'+
           '<input id="'+requiInputId(currentLocation, product.name)+'" type="text" inputmode="numeric" placeholder="Qté" value="'+esc(draftVal)+'" style="width:64px;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px;text-align:center;flex-shrink:0">'+
         '</div>';
@@ -5611,7 +5704,7 @@ window.appRpc = async function(fn, args){
           (ev.info ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">'+esc(ev.info)+'</div>' : '')+
         '</div>'+
         '<span onclick="appAction(\'editEntertainmentEvent\',\''+ev.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
-        '<span onclick="appAction(\'deleteEntertainmentEvent\',\''+ev.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
+        '<span onclick="appAction(\'deleteEntertainmentEvent\',\''+ev.id+'\')" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
       '</div>';
     });
     out += '</div>';
@@ -5698,7 +5791,7 @@ window.appRpc = async function(fn, args){
         '</div>'+
         (sh.filename ? '<span onclick="appAction(\'viewEventPdf\',\''+sh.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('eye',16)+'</span>' : '')+
         '<span onclick="appAction(\'editEventSheet\',\''+sh.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
-        '<span onclick="appAction(\'deleteEventSheet\',\''+sh.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
+        '<span onclick="appAction(\'deleteEventSheet\',\''+sh.id+'\')" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
       '</div>';
     });
     out += '</div>';
@@ -5745,7 +5838,7 @@ window.appRpc = async function(fn, args){
             '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+(p.time?esc(p.time)+' — ':'')+(p.type?esc(p.type)+' · ':'')+esc(p.zone)+'</div>'+
             (p.info ? '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">'+esc(p.info)+'</div>' : '')+
           '</div>'+
-          '<span onclick="appAction(\'deletePrestation\','+i+')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',15)+'</span>'+
+          '<span onclick="appAction(\'deletePrestation\','+i+')" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',15)+'</span>'+
         '</div>';
       });
       out += '</div>';
@@ -5827,7 +5920,7 @@ window.appRpc = async function(fn, args){
           '<div style="font-size:15px;font-weight:600;color:var(--text-primary);margin-top:2px">'+esc(ev.type)+'</div>'+
         '</div>'+
         '<span onclick="appAction(\'editRhEvent\',\''+ev.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
-        '<span onclick="appAction(\'deleteRhEvent\',\''+ev.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
+        '<span onclick="appAction(\'deleteRhEvent\',\''+ev.id+'\')" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
       '</div>';
     });
     out += '</div>';
@@ -5942,7 +6035,7 @@ window.appRpc = async function(fn, args){
     const st = requiStatusLabel(r);
     const bg = st.red ? 'var(--text-danger,#A32D2D)' : (st.ok ? 'var(--text-success,#1F7A3D)' : 'var(--surface-0)');
     const fg = (st.red || st.ok) ? '#fff' : 'var(--text-primary)';
-    return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;border:1.5px solid var(--border-strong,#000);background:'+bg+';color:'+fg+';font-size:11px;font-weight:800;white-space:nowrap">'+esc(st.t)+'</span>';
+    return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;border:1.5px solid var(--border-strong,#000);background:'+bg+';color:'+fg+';font-size:12px;font-weight:800;white-space:nowrap">'+esc(st.t)+'</span>';
   }
   function requiStageCard(r, stage, label, readonly){
     const cnt = requiStageCounts(r, stage);
@@ -5980,7 +6073,7 @@ window.appRpc = async function(fn, args){
       const qtyVal = m && m.qty != null ? String(m.qty) : '';
       const who = m ? (m.by||'') : '';
       const head = '<div style="font-size:12px;font-weight:800;text-align:center;line-height:1.2">'+esc(lab)+'</div>'+
-        (who ? '<div style="font-size:10px;text-align:center;opacity:.9;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(who)+'</div>' : '');
+        (who ? '<div style="font-size:12px;text-align:center;opacity:.9;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(who)+'</div>' : '');
       if (mode === 'etage' && stage === 'cave'){
         return '<div style="'+cellBase+'background:'+bg+'">'+head+
           '<div style="background:#fff;color:#1A1A1A;border-radius:6px;padding:7px 0;text-align:center;font-size:14px;font-weight:800">'+(m ? esc(qtyVal||p.quantity) : '—')+'</div></div>';
@@ -6005,7 +6098,7 @@ window.appRpc = async function(fn, args){
       out += '<div style="padding:10px 12px;border:2px solid '+(miss?'var(--text-danger,#A32D2D)':'var(--border-strong,var(--border))')+';border-radius:10px;background:'+(miss?'rgba(163,45,45,.10)':'var(--surface-1)')+'">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'+
           '<div style="min-width:0"><div style="font-size:14px;font-weight:600;color:'+(miss?'var(--text-danger,#A32D2D)':'var(--text-primary)')+'">'+esc(p.name)+'</div>'+
-          (p.unit ? '<div style="font-size:11px;color:var(--text-muted)">'+esc(p.unit)+'</div>' : '')+'</div>'+
+          (p.unit ? '<div style="font-size:12px;color:var(--text-muted)">'+esc(p.unit)+'</div>' : '')+'</div>'+
           '<div style="font-size:15px;font-weight:800;color:var(--text-accent,#E8432B);white-space:nowrap">× '+esc(p.quantity)+'</div>'+
         '</div>'+
         '<div style="display:flex;gap:8px;margin-top:8px;align-items:stretch">'+askedCell(p)+stageCtl(p,i,'cave','Cave')+(mode === 'cave' ? '' : stageCtl(p,i,'etage','Réassort'))+'</div>'+
@@ -6554,7 +6647,7 @@ window.appRpc = async function(fn, args){
     const wuCard = function(label, color, textColor, bodyHtml){
       return '<div style="display:flex;align-items:stretch;border:2px solid var(--border-strong,var(--border));border-radius:10px;margin-bottom:10px;background:var(--surface-0);overflow:hidden">'+
         '<div style="flex:0 0 24px;background:'+color+';color:'+textColor+';display:flex;align-items:center;justify-content:center;border-right:2px solid var(--border-strong,var(--border))">'+
-          '<span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;padding:6px 0">'+esc(label)+'</span>'+
+          '<span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;padding:6px 0">'+esc(label)+'</span>'+
         '</div>'+
         '<div style="flex:1;min-width:0;padding:10px 12px">'+bodyHtml+'</div>'+
       '</div>';
@@ -6663,7 +6756,7 @@ window.appRpc = async function(fn, args){
           '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(u.name)+'</div>'+
           '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+'</div></div>'+
           '<span onclick="appAction(\'editMamaGangUser\',\''+u.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
-          '<span onclick="appAction(\'deleteMamaGangUser\',\''+u.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
+          '<span onclick="appAction(\'deleteMamaGangUser\',\''+u.id+'\')" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
         '</div>';
       });
     });
@@ -6692,7 +6785,7 @@ window.appRpc = async function(fn, args){
     const posteLabels = { manager:'Manager', salle:'Salle', bar:'Bar', hotel:'Hôtel', cuisine:'Cuisine', 'autres-services':'Autres Services', 'non-attribue':'Non attribué' };
     const users = (state.accessUsers || []).slice();
     (state.mamaGangUsers || []).forEach(function(u){
-      users.push({ id: u.id, name: u.name, code: u.code, role: 'mamagang', poste: u.poste });
+      users.push({ id: u.id, name: u.name, code: u.code, role: 'mamagang', poste: u.poste, roles: u.roles || [] });
     });
     const editingUser = state.accessEditingId ? users.find(function(u){ return u.id === state.accessEditingId; }) : null;
     const formRole = editingUser ? editingUser.role : (state.accessFormRole || 'mamagang');
@@ -6730,6 +6823,10 @@ window.appRpc = async function(fn, args){
         '<select id="access-user-poste" style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px">'+
           Object.keys(posteLabels).map(function(p){ return '<option value="'+p+'" '+((editingUser?(editingUser.poste||'non-attribue'):'non-attribue')===p?'selected':'')+'>'+posteLabels[p]+'</option>'; }).join('')+
         '</select>' : '')+
+      (formRole === 'mamagang' ?
+        '<label style="display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-0);font-size:14px;color:var(--text-primary);cursor:pointer">'+
+        '<input id="access-user-extra-technique" type="checkbox" '+((editingUser && (editingUser.roles||[]).indexOf('technique')>=0)?'checked ':'')+'style="width:20px;height:20px">'+
+        '<span><b>Accès Technique en plus</b><br><span style="font-size:12px;color:var(--text-secondary)">Voit aussi les remontées techniques depuis son accueil</span></span></label>' : '')+
       '<label style="font-size:13px;color:var(--text-secondary);font-weight:600">Code personnel (4 chiffres)</label>'+
       '<input id="access-user-code" type="text" inputmode="numeric" maxlength="4" placeholder="Ex: 1234" value="'+(editingUser?esc(editingUser.code):'')+'" style="width:100%;box-sizing:border-box;padding:10px;margin:6px 0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:14px;text-align:center;letter-spacing:3px">'+
       (state.accessUserError ? '<p style="color:var(--text-danger,#A32D2D);font-size:13px;margin:0 0 10px">'+esc(state.accessUserError)+'</p>' : '')+
@@ -6746,9 +6843,9 @@ window.appRpc = async function(fn, args){
       const posteSub = (u.role === 'mamagang') ? (posteLabels[u.poste || 'non-attribue']) : (roleLabels[u.role]||u.role);
       out += '<div style="padding:12px 14px;border:2.5px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
         '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(u.name)+'</div>'+
-        '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+(posteSub?' · '+esc(posteSub):'')+'</div></div>'+
+        '<div style="font-size:12px;color:var(--text-secondary)">code '+esc(u.code)+(posteSub?' · '+esc(posteSub):'')+((u.roles||[]).indexOf('technique')>=0?' · + Technique':'')+'</div></div>'+
         '<span onclick="appAction(\'editAccessUser\',\''+u.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
-        '<span onclick="appAction(\'deleteAccessUser\',\''+u.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
+        '<span onclick="appAction(\'deleteAccessUser\',\''+u.id+'\')" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
       '</div>';
     });
     out += '</div>';
@@ -6763,6 +6860,7 @@ window.appRpc = async function(fn, args){
     '</div>';
     out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:12px">';
     const options = [
+      { action:'goMorning', icon:'clipboard', color:'#E8432B', fg:'#fff', label:'Vue du matin' },
       { action:'goProcessInfosRead', icon:'edit', color:'#7A5FE0', fg:'#fff', label:'Process & Infos' },
       { action:'goFermeture', icon:'door', color:'#2AB0C5', fg:'#fff', label:'Fermer un floor' },
       { action:'goChecklistesMenu', icon:'clipboard', color:'#FFD500', label:'Checklistes' },
@@ -6778,6 +6876,50 @@ window.appRpc = async function(fn, args){
         '<div class="mama-title" style="flex:1;font-size:15px;color:'+fg+'">'+opt.label+'</div>'+
         (fbCount>0 ? '<span style="background:#E8432B;color:#fff;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:800">'+fbCount+'</span>' : '')+
       '</button>';
+    });
+    out += '</div>';
+    out += bottomNav('menu');
+    return out;
+  }
+
+  // ===== Vue du matin (managers) : ce qui s'est passé depuis hier midi =====
+  function morningWindowStart(){
+    const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(12, 0, 0, 0); return d.getTime();
+  }
+  function histTs(h){ const m = /^hist-(\d{10,})/.exec(h.id || ''); return m ? +m[1] : 0; }
+  function screenMorning(){
+    const m = state.morning || { hist: [], loaded: false };
+    const start = morningWindowStart();
+    const recent = (m.hist || []).filter(function(h){ return histTs(h) >= start; });
+    let out = requiHubHeader('Vue du matin', 'Éléments non cochés à la fermeture de la veille', "appAction('goManagerMenu')");
+    out += '<div style="padding:8px 16px;display:flex;flex-direction:column;gap:12px">';
+    if (!m.loaded){ out += '<div style="padding:30px;text-align:center;color:var(--text-muted)">Chargement…</div></div>'+bottomNav('menu'); return out; }
+    const sec = function(t){ return '<div class="mama-title" style="font-size:13px;color:var(--text-secondary);margin:6px 2px 0;text-transform:uppercase;letter-spacing:.4px">'+t+'</div>'; };
+    const card = function(ok, title, line, extra){
+      const col = ok === 'ok' ? '#2D7A3E' : (ok === 'warn' ? '#B07A00' : '#A32D2D');
+      return '<div style="padding:12px 14px;border-radius:12px;border:2.5px solid var(--border-strong,var(--border));border-left:8px solid '+col+';background:var(--surface-1)">'+
+        '<div style="font-size:15px;font-weight:800;color:var(--text-primary)">'+(ok==='ok'?'✔ ':(ok==='warn'?'⚠ ':'✘ '))+esc(title)+'</div>'+
+        '<div style="font-size:13px;color:var(--text-secondary);margin-top:2px">'+line+'</div>'+(extra||'')+'</div>';
+    };
+    const missingOf = function(h){ return (h.tasksSnapshot || []).filter(function(t){ return !t.checked; }); };
+    const missingHtml = function(h){
+      const miss = missingOf(h);
+      let x = '';
+      if (miss.length) x += '<ul style="margin:8px 0 0;padding-left:18px;font-size:13px;color:#A32D2D">'+miss.map(function(t){ return '<li>'+esc(t.label)+'</li>'; }).join('')+'</ul>';
+      if (h.comment) x += '<div style="margin-top:8px;font-size:13px;color:var(--text-primary);background:var(--surface-0);padding:8px 10px;border-radius:8px"><b>Commentaire :</b> '+esc(h.comment)+'</div>';
+      return x;
+    };
+    // 1) Fermetures
+    const fermCat = (state.structure && state.structure.categories || []).find(function(c){ return c.id === 'fermeture'; });
+    const floors = fermCat ? fermCat.sublieux : [];
+    if (!floors.length) out += card('ko','Aucun floor configuré','');
+    floors.forEach(function(f){
+      const h = recent.find(function(x){ return x.categoryId === 'fermeture' && x.sublieuName === f.name; });
+      if (!h) out += card('ko', f.name, 'Aucune fermeture enregistrée hier soir.');
+      else {
+        const n = missingOf(h).length;
+        out += card(n ? 'warn' : 'ok', f.name, 'Fermé par <b>'+esc(h.operator || '?')+'</b> · '+esc(h.when || '')+(n ? ' · <b>'+n+' tâche'+(n>1?'s':'')+' non cochée'+(n>1?'s':'')+'</b>' : ' · tout est coché'), missingHtml(h));
+      }
     });
     out += '</div>';
     out += bottomNav('menu');
@@ -6954,12 +7096,12 @@ window.appRpc = async function(fn, args){
     list.forEach(function(f){
       out += '<div style="padding:14px 16px;border:2.5px solid var(--border-strong,var(--border));border-radius:12px;background:var(--surface-1);box-shadow:3px 3px 0 var(--border-strong,#000);display:flex;align-items:flex-start;gap:10px">'+
         '<div style="flex:1">'+
-          (f.location ? '<div style="display:inline-block;padding:2px 8px;border-radius:999px;background:var(--bg-accent,#FFD500);color:#1A1A1A;font-size:11px;font-weight:700;margin-bottom:6px">'+esc(f.location)+'</div>' : '')+
+          (f.location ? '<div style="display:inline-block;padding:2px 8px;border-radius:999px;background:var(--bg-accent,#FFD500);color:#1A1A1A;font-size:12px;font-weight:700;margin-bottom:6px">'+esc(f.location)+'</div>' : '')+
           '<div style="font-size:14px;color:var(--text-primary)">'+esc(f.message)+'</div>'+
           (f.photo ? '<img src="'+f.photo+'" style="max-width:100%;border-radius:8px;margin-top:8px;border:1.5px solid var(--border-strong,var(--border));display:block">' : '')+
           '<div style="font-size:12px;color:var(--text-secondary);margin-top:8px">Par '+esc(f.author)+' · '+esc(f.when)+'</div>'+
         '</div>'+
-        '<span onclick="appAction(\'deleteFeedbackForRole\',\''+f.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer;flex-shrink:0">'+icon('trash',16)+'</span>'+
+        '<span onclick="appAction(\'deleteFeedbackForRole\',\''+f.id+'\')" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer;flex-shrink:0">'+icon('trash',16)+'</span>'+
       '</div>';
     });
     out += '</div>';
@@ -7036,7 +7178,7 @@ window.appRpc = async function(fn, args){
           out += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:2px solid '+(missH?'var(--text-danger,#A32D2D)':'var(--border-strong,var(--border))')+';border-radius:10px;background:'+(missH?'rgba(163,45,45,.10)':'var(--surface-1)')+'">'+
             '<div style="min-width:0"><div style="font-size:14px;font-weight:600;color:var(--text-primary)">'+esc(pr.name)+'</div>'+
             (pr.location ? '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">'+esc(pr.location)+'</div>' : '')+
-            '<div style="font-size:11px;margin-top:2px;color:'+(missH?'var(--text-danger,#A32D2D)':'var(--text-muted)')+'">Demandé ✓ · Cave '+(pr.cave?(requiItemOk(pr,'cave')?'✓ ':'⚠ ')+esc(pr.cave.qty!=null?pr.cave.qty:''):'—')+' · Réassort '+(pr.etage?(requiItemOk(pr,'etage')?'✓ ':'⚠ ')+esc(pr.etage.qty!=null?pr.etage.qty:''):'—')+'</div></div>'+
+            '<div style="font-size:12px;margin-top:2px;color:'+(missH?'var(--text-danger,#A32D2D)':'var(--text-muted)')+'">Demandé ✓ · Cave '+(pr.cave?(requiItemOk(pr,'cave')?'✓ ':'⚠ ')+esc(pr.cave.qty!=null?pr.cave.qty:''):'—')+' · Réassort '+(pr.etage?(requiItemOk(pr,'etage')?'✓ ':'⚠ ')+esc(pr.etage.qty!=null?pr.etage.qty:''):'—')+'</div></div>'+
             '<div style="font-size:14px;font-weight:700;color:var(--text-accent,#E8432B);white-space:nowrap">'+esc(pr.quantity)+(pr.unit ? ' '+esc(pr.unit) : '')+'</div>'+
           '</div>';
         });
@@ -7375,7 +7517,7 @@ window.appRpc = async function(fn, args){
             '<summary style="padding:12px 14px;cursor:pointer;font-weight:700;font-size:14px;color:var(--text-primary);list-style:none">'+esc(it.title)+
             '</summary>'+
             '<div style="border-top:1px solid var(--border);padding:12px 14px;background:var(--surface-0);display:flex;flex-direction:column;gap:10px">'+
-              '<div><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:'+(it.offert==='Oui'?'var(--bg-success,#EAF3DE)':'var(--surface-1)')+';color:'+(it.offert==='Oui'?'var(--text-success,#3B6D11)':'var(--text-muted)')+'">Offert : '+esc(it.offert)+'</span></div>'+
+              '<div><span style="font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:'+(it.offert==='Oui'?'var(--bg-success,#EAF3DE)':'var(--surface-1)')+';color:'+(it.offert==='Oui'?'var(--text-success,#3B6D11)':'var(--text-muted)')+'">Offert : '+esc(it.offert)+'</span></div>'+
               '<div><div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:3px">Explication</div><div style="font-size:13px;color:var(--text-primary);white-space:pre-wrap">'+esc(it.explication)+'</div></div>'+
               '<div><div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:3px">Ce que je dois faire</div><div style="font-size:13px;color:var(--text-primary);white-space:pre-wrap">'+esc(it.aFaire)+'</div></div>'+
             '</div>'+
@@ -7452,7 +7594,7 @@ window.appRpc = async function(fn, args){
           (p.content ? '' : '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">Contenu à compléter</div>')+
         '</div>'+
         '<span onclick="appAction(\'editProcessInfo\',\''+p.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
-        '<span onclick="appAction(\'deleteProcessInfo\',\''+p.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
+        '<span onclick="appAction(\'deleteProcessInfo\',\''+p.id+'\')" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
       '</div>';
     });
     out += '</div>';
@@ -7540,11 +7682,11 @@ window.appRpc = async function(fn, args){
         out += '<div style="padding:12px 14px;border:2px solid var(--border-strong,var(--border));border-radius:10px;background:var(--surface-1);display:flex;align-items:center;gap:10px">'+
           '<input type="number" min="1" max="'+cat.items.length+'" value="'+(idx+1)+'" onchange="appAction(\'moveAllergeneItemToPosition\', {catId:\''+cat.id+'\', index:'+idx+', position:parseInt(this.value,10)})" style="width:36px;padding:4px;text-align:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary);font-size:12px;flex-shrink:0">'+
           '<div onclick="appAction(\'editAllergeneItem\',\''+it.id+'\')" style="flex:1;cursor:pointer">'+
-            '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(it.name)+(it.group?' <span style="font-size:10px;font-weight:700;color:var(--text-accent,#7A5FE0);text-transform:uppercase">· '+esc(it.group)+'</span>':'')+'</div>'+
-            (it.allergenes && it.allergenes.length ? '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">'+esc(it.allergenes.join(', '))+'</div>' : '')+
+            '<div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(it.name)+(it.group?' <span style="font-size:12px;font-weight:700;color:var(--text-accent,#7A5FE0);text-transform:uppercase">· '+esc(it.group)+'</span>':'')+'</div>'+
+            (it.allergenes && it.allergenes.length ? '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">'+esc(it.allergenes.join(', '))+'</div>' : '')+
           '</div>'+
           '<span onclick="appAction(\'editAllergeneItem\',\''+it.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',15)+'</span>'+
-          '<span onclick="appAction(\'deleteAllergeneItem\',\''+it.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',15)+'</span>'+
+          '<span onclick="appAction(\'deleteAllergeneItem\',\''+it.id+'\')" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',15)+'</span>'+
         '</div>';
       });
     });
@@ -7593,7 +7735,7 @@ window.appRpc = async function(fn, args){
           (p.content ? '' : '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">Contenu à compléter</div>')+
         '</div>'+
         '<span onclick="appAction(\'editRecette\',\''+p.id+'\')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',16)+'</span>'+
-        '<span onclick="appAction(\'deleteRecette\',\''+p.id+'\')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
+        '<span onclick="appAction(\'deleteRecette\',\''+p.id+'\')" style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-10px;color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',16)+'</span>'+
       '</div>';
     });
     out += '</div>';
@@ -7660,7 +7802,7 @@ window.appRpc = async function(fn, args){
             '</div>';
           } else {
             out += '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px;color:var(--text-secondary);gap:5px">'+
-              '<span style="flex:1">'+esc(product.name)+' <span style="color:var(--text-muted);font-size:11px">('+esc(product.unit||'')+(product.parstock!=null?' · '+esc(product.parstock):'')+')</span></span>'+
+              '<span style="flex:1">'+esc(product.name)+' <span style="color:var(--text-muted);font-size:12px">('+esc(product.unit||'')+(product.parstock!=null?' · '+esc(product.parstock):'')+')</span></span>'+
               '<input type="number" min="1" max="'+productsHere.length+'" value="'+(localIdx+1)+'" onchange="appAction(\'adminReqMoveProductToPosition\', {globalIndex:'+gi+', position:parseInt(this.value,10)})" style="width:36px;padding:4px;text-align:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12px">'+
               '<span onclick="appAction(\'adminReqStartEditProduct\','+gi+')" style="color:var(--text-accent,#185FA5);cursor:pointer">'+icon('edit',13)+'</span>'+
               '<span onclick="appAction(\'adminReqDeleteProduct\','+gi+')" style="color:var(--text-danger,#A32D2D);cursor:pointer">'+icon('trash',13)+'</span>'+
@@ -7878,6 +8020,7 @@ window.appRpc = async function(fn, args){
     else if (state.screen === 'checklistes-menu') html = screenChecklistesMenu();
     else if (state.screen === 'fermeture-name') html = screenFermetureName();
     else if (state.screen === 'archives') html = screenArchives();
+    else if (state.screen === 'morning') html = screenMorning();
     else if (state.screen === 'manager-locked') html = screenManagerLocked();
     else if (state.screen === 'other-access-menu') html = screenOtherAccessMenu();
     else if (state.screen === 'access-management') html = screenAccessManagement();
@@ -8090,7 +8233,7 @@ window.appRpc = async function(fn, args){
     return '<div onclick="agAct(\'recipe\',\''+r.id+'\')" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:2.5px solid var(--border-strong,#000);border-radius:12px;background:var(--surface-1);cursor:pointer;box-shadow:3px 3px 0 var(--border-strong,#000)">'+
       '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(agPick(r,'nameFr','nameEn'))+'</div>'+
       '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">'+agPathLabel(r)+'</div>'+
-      (ks.length ? '<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">'+esc(ks.map(agAllLabel).join(' · '))+'</div>' : '')+'</div>'+icon('chevronRight',16)+'</div>';
+      (ks.length ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">'+esc(ks.map(agAllLabel).join(' · '))+'</div>' : '')+'</div>'+icon('chevronRight',16)+'</div>';
   }
   function agSearchResultsHtml(){
     const q = agUI.q;
@@ -8460,7 +8603,7 @@ window.appRpc = async function(fn, args){
     if (imp && imp.busy) out += '<div style="margin:10px 16px;text-align:center;color:var(--text-muted);font-size:14px">Lecture des fichiers…</div>';
     if (!imp || imp.busy || !plan) return out;
     const s = plan.sum;
-    const tile = function(n, label, color){ return '<div style="padding:10px 6px;text-align:center;border:2px solid var(--border-strong,#000);border-radius:10px;background:var(--surface-1)"><div style="font-size:22px;font-weight:800;color:'+color+'">'+n+'</div><div style="font-size:11px;font-weight:700;color:var(--text-secondary)">'+label+'</div></div>'; };
+    const tile = function(n, label, color){ return '<div style="padding:10px 6px;text-align:center;border:2px solid var(--border-strong,#000);border-radius:10px;background:var(--surface-1)"><div style="font-size:22px;font-weight:800;color:'+color+'">'+n+'</div><div style="font-size:12px;font-weight:700;color:var(--text-secondary)">'+label+'</div></div>'; };
     out += '<div style="margin:12px 16px 4px;font-size:14px;font-weight:800;color:var(--text-primary)">2. Aperçu</div>';
     out += '<div style="padding:0 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+
       tile(s.newRec,'Nouvelles recettes','#185FA5')+tile(s.newValidated,'avec allergènes','#3B6D11')+tile(s.newTodo,'à compléter','#7A5600')+
@@ -8513,7 +8656,7 @@ window.appRpc = async function(fn, args){
     if (r.pub === 'archived') return 'Archivée';
     return AGM_VALID[r.validation]+' · '+AGM_PUB[r.pub];
   }
-  function agmBadge(txt, bg, fg){ return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:800;background:'+bg+';color:'+fg+';white-space:nowrap">'+esc(txt)+'</span>'; }
+  function agmBadge(txt, bg, fg){ return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800;background:'+bg+';color:'+fg+';white-space:nowrap">'+esc(txt)+'</span>'; }
   function agmBadges(r){
     let out = '';
     out += r.validation === 'validated' ? agmBadge('Validée','#EAF3DE','#3B6D11') : agmBadge(AGM_VALID[r.validation],'#FFF1C9','#7A5600');
@@ -8556,7 +8699,7 @@ window.appRpc = async function(fn, args){
   function agmDashHtml(a){
     const s = agmStats(agDb);
     let out = agmHeader('Gestion des allergènes', "appAction('goAdminMenu')") + agmFlash(a);
-    const tile = function(n, label, color){ return '<div style="padding:10px 6px;text-align:center;border:2px solid var(--border-strong,#000);border-radius:10px;background:var(--surface-1)"><div style="font-size:22px;font-weight:800;color:'+color+'">'+n+'</div><div style="font-size:11px;font-weight:700;color:var(--text-secondary)">'+label+'</div></div>'; };
+    const tile = function(n, label, color){ return '<div style="padding:10px 6px;text-align:center;border:2px solid var(--border-strong,#000);border-radius:10px;background:var(--surface-1)"><div style="font-size:22px;font-weight:800;color:'+color+'">'+n+'</div><div style="font-size:12px;font-weight:700;color:var(--text-secondary)">'+label+'</div></div>'; };
     out += '<div style="padding:4px 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+
       tile(s.total,'Recettes','var(--text-primary)')+tile(s.validated,'Validées','#3B6D11')+tile(s.pending,'En attente','#7A5600')+
       tile(s.supplier,'Vérif. fournisseur','#7A2D8C')+tile(s.published,'Publiées','#185FA5')+tile(s.hidden,'Masquées','#8C1D18')+'</div>';
@@ -8600,7 +8743,7 @@ window.appRpc = async function(fn, args){
       const paths = (r.places||[]).map(function(p){ const m = agMenu(p.m); return m ? m.nameFr : ''; }).filter(Boolean);
       return '<div onclick="agmAct(\'edit\',\''+r.id+'\')" style="padding:12px 14px;'+AG_BORDER+';border-radius:12px;background:var(--surface-1);cursor:pointer;box-shadow:2px 2px 0 var(--border-strong,#000)">'+
         '<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:14px;font-weight:700;color:var(--text-primary)">'+esc(r.nameFr)+'</div>'+icon('chevronRight',16)+'</div>'+
-        '<div style="font-size:11px;color:var(--text-muted);margin:3px 0 6px">'+esc(paths.join(', ') || 'Aucune carte associée')+'</div>'+
+        '<div style="font-size:12px;color:var(--text-muted);margin:3px 0 6px">'+esc(paths.join(', ') || 'Aucune carte associée')+'</div>'+
         '<div style="display:flex;flex-wrap:wrap;gap:4px">'+agmBadges(r)+'</div></div>';
     }).join('')+'</div>';
   }
@@ -8663,7 +8806,7 @@ window.appRpc = async function(fn, args){
         '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><input type="text" value="'+esc(m.nameFr)+'" onchange="agmAct(\'renMenu\',\''+m.id+'\',\'nameFr\',this.value)" style="'+inp+';flex:1;font-weight:700">'+
         '<input type="text" value="'+esc(m.nameEn||'')+'" placeholder="EN" onchange="agmAct(\'renMenu\',\''+m.id+'\',\'nameEn\',this.value)" style="'+inp+';width:90px">'+
         '<span onclick="agmAct(\'delMenu\',\''+m.id+'\')" style="cursor:pointer;color:#B3261E;font-size:20px;padding:0 6px">×</span></div>'+
-        '<div style="font-size:11px;font-weight:800;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px">'+(m.type==='carte'?'Carte':'Menu groupe')+'</div>'+
+        '<div style="font-size:12px;font-weight:800;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px">'+(m.type==='carte'?'Carte':'Menu groupe')+'</div>'+
         m.families.map(function(f){
           return '<div style="display:flex;gap:6px;align-items:center;margin-top:5px"><input type="text" value="'+esc(f.nameFr)+'" onchange="agmAct(\'renFam\',\''+m.id+'\',\''+f.id+'\',this.value,\'nameFr\')" style="'+inp+';flex:1;font-size:13px">'+
             '<input type="text" value="'+esc(f.nameEn||'')+'" placeholder="EN" onchange="agmAct(\'renFam\',\''+m.id+'\',\''+f.id+'\',this.value,\'nameEn\')" style="'+inp+';width:90px;font-size:13px">'+
@@ -8685,7 +8828,7 @@ window.appRpc = async function(fn, args){
       out += '<div style="padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--surface-1)">'+
         '<div style="font-size:13px;font-weight:700;color:var(--text-primary)">'+esc(e.recipeName||'')+' <span style="font-weight:600;color:var(--text-muted)">· '+esc(e.action||'')+'</span></div>'+
         (e.detail ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:3px;line-height:1.4">'+esc(e.detail)+'</div>' : '')+
-        '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">'+esc(e.user||'')+' · '+esc(e.when||'')+'</div></div>';
+        '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">'+esc(e.user||'')+' · '+esc(e.when||'')+'</div></div>';
     });
     out += '</div>';
     return out;
